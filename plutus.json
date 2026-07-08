@@ -1,0 +1,282 @@
+{
+  "preamble": {
+    "title": "adam/spending-guard",
+    "description": "Aiken contracts for project 'adam/spending-guard'",
+    "version": "0.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.23+8949565"
+    },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "guard.guard.spend",
+      "datum": {
+        "title": "datum_opt",
+        "schema": {
+          "$ref": "#/definitions/guard~1types~1GuardDatum"
+        }
+      },
+      "redeemer": {
+        "title": "redeemer",
+        "schema": {
+          "$ref": "#/definitions/guard~1types~1GuardRedeemer"
+        }
+      },
+      "parameters": [
+        {
+          "title": "owner",
+          "schema": {
+            "$ref": "#/definitions/aiken~1crypto~1VerificationKeyHash"
+          }
+        },
+        {
+          "title": "stt_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "stt_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        }
+      ],
+      "compiledCode": "59074d01010022229800aba2aba1aba0aab9faab9eaab9dab9a9bae0049bae0039bae002488888888896600264653001300b00198059806000cdc3a4005300b0024888966002600460166ea800e2653001301000198081808800cdc3a400091119912cc004c00c0062b3001301237540150028b20268acc004c0200062b3001301237540150028b20268b202040402b30013001300f37540051980091119199119801001000912cc004006007132325980099b910060018acc004cdc7803000c4dd6980c001401501644cc010010c07000d0161bae30160013019001405c64646600200200c44b3001001801c4c8c96600266e440200062b30013371e010003137566032005005405d133004004301d003405c6eb8c05c004c0680050180a5eb7bdb18052000912cc0040062900044cdc02400466004004602c002809a46028602a602a602a602a003230143015301530153015301530153015001912cc0040062900044cdc02400466004004602c002809a46028602a602a0032232330010010032259800800c52f5c11332259800980280144cc060008cc01001000626600800800280a0c05c004c06000501548c050c05400646028602a602a602a602a602a602a602a602a0032232330010010032259800800c528456600266e3cdd7180b800801c528c4cc008008c060005012202a980998081baa00248888888888a6002601401529800800d22100a4410040313007007488966002601e603a6ea805a26600a6eb0c018c078dd500980dc4ca600264660020026eb0c08cc080dd500a912cc0040062980103d87a80008992cc004cdd7981298111baa0010158980219812000a5eb82266006006604c0048100c09000502266002602a603c6ea8c01cc07cdd5002d28528a03a998031bac3007301f37540286eb8c088c07cdd5002a444b300130133021375400713232598009814000c4c966002603730013756601c604a6ea8c038c094dd5000c08604080aa264b3001302a0018994c004cdd7981518139baa00100599b89300a323300100132330010013756602460526ea800c896600200314bd6f7b63044c8cc896600266e452201000028acc004cdc7a441000028800c401102b44cc0bc00ccc01401400502b1bae302a001302f002302d00140ac44b30010018a5eb82264664466446600400400244b30010018801c4c8cc0c4dd3998189ba900533031302e00133031302f0014bd701980180198198011818800a05e375660580066eb8c0a4004cc00c00cc0b8008c0b000502a24051302a302737546054604e6ea8c050c09cdd500e2444b30013020302937540031332259800981118159baa001899914c0056600266e2401000a266e24cdc080100224181f82b14a0816266e20008dd6980d98171baa01499b8130123756602e605c6ea8c05cc0b8dd5005000ccdc49bad303130323032303230323032302e37540280033301837586038605c6ea80508cdc499b80482fff05400ccdc01bad3032302f37540026eb4c0c8c0ccc0ccc0ccc0bcdd500aa444446530013371260320026eb4c0dcc0e0c0e0c0e0c0e0c0e0c0e0c0d0dd500d4c8c8c8c8c068cc0e8c0ec010cc0e8c0ec00ccc0e8c0ec008cc0e8c0ec004cc0e8dd3802981e181e000981d800981d000981c800981a1baa01a980f981a1baa00e99b8933700653001001801d20004004444b30010028800c66002007303b00299b80001375a6040606e6ea8c0e80090032070004375a603e60686ea806a66e24010dd6980e981a1baa01a4888896600266e1d200430383754007132598009815981c9baa00189919191919191919194c004c966002608800315980099b8948010c10c0062d1303a304300141091641146ea8c1180066eb8c1180266eb4c1180226eb4c11801e6eb4c11801a6eb4c1180126eb4c11800e6eb4c11800922222222598009827804c4c8cc004004dd61827807112cc0040062b300102c8acc0040b62b30010268acc0040962b300101f8acc00407a2b30010158acc0040722b30010168acc0040662b30013375e0280311303e98009bab303b304d3754085049824207a8a50412d14a0825a294104b452820968a50412d14a0825a294104b452820968a50412d14a0825a294104b44c966002607e609a6ea8006264646644b30013056003899803803982b0034590531bad3053001375a60a600460a6002609c6ea80062c8260c14000504e45904c0c118004c114004c110004c10c004c108004c104004c100004c0fc004c0e8dd5000c59038181e181c9baa0038b206e2cc004cdc424000007133035301533035375000e6606a6ea000d2f5c0003100140c4375a605e60586ea8004c040dd5980a98161baa0068b2054375a605a60546ea8004c0b4c0a8dd5180998151baa3017302a375403f1640a030290018b204e3300f37586020604a6ea80688c07260026eacc03cc098dd5000c08a04280b22c8118c09c0062c8128cc034dd6181318119baa01823375e604e60486ea8c034c090dd5000801181298111baa300b30223754604a60446ea800e2c81006e952000407045900e18079baa00818061baa0038b2014180580098031baa00b8a4d13656401001",
+      "hash": "f20044d057f99f92a14b9fb7a446f7e97fe1656d9817bbcc53decae3"
+    },
+    {
+      "title": "guard.guard.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "parameters": [
+        {
+          "title": "owner",
+          "schema": {
+            "$ref": "#/definitions/aiken~1crypto~1VerificationKeyHash"
+          }
+        },
+        {
+          "title": "stt_policy",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1PolicyId"
+          }
+        },
+        {
+          "title": "stt_name",
+          "schema": {
+            "$ref": "#/definitions/cardano~1assets~1AssetName"
+          }
+        }
+      ],
+      "compiledCode": "59074d01010022229800aba2aba1aba0aab9faab9eaab9dab9a9bae0049bae0039bae002488888888896600264653001300b00198059806000cdc3a4005300b0024888966002600460166ea800e2653001301000198081808800cdc3a400091119912cc004c00c0062b3001301237540150028b20268acc004c0200062b3001301237540150028b20268b202040402b30013001300f37540051980091119199119801001000912cc004006007132325980099b910060018acc004cdc7803000c4dd6980c001401501644cc010010c07000d0161bae30160013019001405c64646600200200c44b3001001801c4c8c96600266e440200062b30013371e010003137566032005005405d133004004301d003405c6eb8c05c004c0680050180a5eb7bdb18052000912cc0040062900044cdc02400466004004602c002809a46028602a602a602a602a003230143015301530153015301530153015001912cc0040062900044cdc02400466004004602c002809a46028602a602a0032232330010010032259800800c52f5c11332259800980280144cc060008cc01001000626600800800280a0c05c004c06000501548c050c05400646028602a602a602a602a602a602a602a602a0032232330010010032259800800c528456600266e3cdd7180b800801c528c4cc008008c060005012202a980998081baa00248888888888a6002601401529800800d22100a4410040313007007488966002601e603a6ea805a26600a6eb0c018c078dd500980dc4ca600264660020026eb0c08cc080dd500a912cc0040062980103d87a80008992cc004cdd7981298111baa0010158980219812000a5eb82266006006604c0048100c09000502266002602a603c6ea8c01cc07cdd5002d28528a03a998031bac3007301f37540286eb8c088c07cdd5002a444b300130133021375400713232598009814000c4c966002603730013756601c604a6ea8c038c094dd5000c08604080aa264b3001302a0018994c004cdd7981518139baa00100599b89300a323300100132330010013756602460526ea800c896600200314bd6f7b63044c8cc896600266e452201000028acc004cdc7a441000028800c401102b44cc0bc00ccc01401400502b1bae302a001302f002302d00140ac44b30010018a5eb82264664466446600400400244b30010018801c4c8cc0c4dd3998189ba900533031302e00133031302f0014bd701980180198198011818800a05e375660580066eb8c0a4004cc00c00cc0b8008c0b000502a24051302a302737546054604e6ea8c050c09cdd500e2444b30013020302937540031332259800981118159baa001899914c0056600266e2401000a266e24cdc080100224181f82b14a0816266e20008dd6980d98171baa01499b8130123756602e605c6ea8c05cc0b8dd5005000ccdc49bad303130323032303230323032302e37540280033301837586038605c6ea80508cdc499b80482fff05400ccdc01bad3032302f37540026eb4c0c8c0ccc0ccc0ccc0bcdd500aa444446530013371260320026eb4c0dcc0e0c0e0c0e0c0e0c0e0c0e0c0d0dd500d4c8c8c8c8c068cc0e8c0ec010cc0e8c0ec00ccc0e8c0ec008cc0e8c0ec004cc0e8dd3802981e181e000981d800981d000981c800981a1baa01a980f981a1baa00e99b8933700653001001801d20004004444b30010028800c66002007303b00299b80001375a6040606e6ea8c0e80090032070004375a603e60686ea806a66e24010dd6980e981a1baa01a4888896600266e1d200430383754007132598009815981c9baa00189919191919191919194c004c966002608800315980099b8948010c10c0062d1303a304300141091641146ea8c1180066eb8c1180266eb4c1180226eb4c11801e6eb4c11801a6eb4c1180126eb4c11800e6eb4c11800922222222598009827804c4c8cc004004dd61827807112cc0040062b300102c8acc0040b62b30010268acc0040962b300101f8acc00407a2b30010158acc0040722b30010168acc0040662b30013375e0280311303e98009bab303b304d3754085049824207a8a50412d14a0825a294104b452820968a50412d14a0825a294104b452820968a50412d14a0825a294104b44c966002607e609a6ea8006264646644b30013056003899803803982b0034590531bad3053001375a60a600460a6002609c6ea80062c8260c14000504e45904c0c118004c114004c110004c10c004c108004c104004c100004c0fc004c0e8dd5000c59038181e181c9baa0038b206e2cc004cdc424000007133035301533035375000e6606a6ea000d2f5c0003100140c4375a605e60586ea8004c040dd5980a98161baa0068b2054375a605a60546ea8004c0b4c0a8dd5180998151baa3017302a375403f1640a030290018b204e3300f37586020604a6ea80688c07260026eacc03cc098dd5000c08a04280b22c8118c09c0062c8128cc034dd6181318119baa01823375e604e60486ea8c034c090dd5000801181298111baa300b30223754604a60446ea800e2c81006e952000407045900e18079baa00818061baa0038b2014180580098031baa00b8a4d13656401001",
+      "hash": "f20044d057f99f92a14b9fb7a446f7e97fe1656d9817bbcc53decae3"
+    },
+    {
+      "title": "state_token.state_token.mint",
+      "redeemer": {
+        "title": "_redeemer",
+        "schema": {
+          "$ref": "#/definitions/Data"
+        }
+      },
+      "parameters": [
+        {
+          "title": "genesis",
+          "schema": {
+            "$ref": "#/definitions/cardano~1transaction~1OutputReference"
+          }
+        }
+      ],
+      "compiledCode": "59010d010100229800aba2aba1aab9faab9eaab9dab9a48888896600264653001300700198039804000cc01c0092225980099b8748000c01cdd500144c8c966002601a0031325980099b8748008006264660020026eb0c038c030dd5002912cc00400629422b30013375e601e601a6ea8c03c00404a29462660040046020002805900e456600266e1d20010018a518a5040248048dd698051806000c5900b1919198008009bab300d300e300e300e300e300b375400844b3001001801c4c8c96600266e440180062b30013371e00c00313756601c0050054031133004004301100340306eb8c030004c03800500d0a5eb7bdb180dd7180518041baa0028b200c180380098019baa0078a4d1365640041",
+      "hash": "1673ff3540113129bfb57c33dda12993f3667765c6fe669686d1794e"
+    },
+    {
+      "title": "state_token.state_token.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "parameters": [
+        {
+          "title": "genesis",
+          "schema": {
+            "$ref": "#/definitions/cardano~1transaction~1OutputReference"
+          }
+        }
+      ],
+      "compiledCode": "59010d010100229800aba2aba1aab9faab9eaab9dab9a48888896600264653001300700198039804000cc01c0092225980099b8748000c01cdd500144c8c966002601a0031325980099b8748008006264660020026eb0c038c030dd5002912cc00400629422b30013375e601e601a6ea8c03c00404a29462660040046020002805900e456600266e1d20010018a518a5040248048dd698051806000c5900b1919198008009bab300d300e300e300e300e300b375400844b3001001801c4c8c96600266e440180062b30013371e00c00313756601c0050054031133004004301100340306eb8c030004c03800500d0a5eb7bdb180dd7180518041baa0028b200c180380098019baa0078a4d1365640041",
+      "hash": "1673ff3540113129bfb57c33dda12993f3667765c6fe669686d1794e"
+    }
+  ],
+  "definitions": {
+    "Bool": {
+      "title": "Bool",
+      "anyOf": [
+        {
+          "title": "False",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "True",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "ByteArray": {
+      "title": "ByteArray",
+      "dataType": "bytes"
+    },
+    "Data": {
+      "title": "Data",
+      "description": "Any Plutus data."
+    },
+    "Int": {
+      "dataType": "integer"
+    },
+    "List<guard/types/SpendRecord>": {
+      "dataType": "list",
+      "items": {
+        "$ref": "#/definitions/guard~1types~1SpendRecord"
+      }
+    },
+    "aiken/crypto/VerificationKeyHash": {
+      "title": "VerificationKeyHash",
+      "dataType": "bytes"
+    },
+    "cardano/assets/AssetName": {
+      "title": "AssetName",
+      "dataType": "bytes"
+    },
+    "cardano/assets/PolicyId": {
+      "title": "PolicyId",
+      "dataType": "bytes"
+    },
+    "cardano/transaction/OutputReference": {
+      "title": "OutputReference",
+      "description": "An `OutputReference` is a unique reference to an output on-chain. The `output_index`\n corresponds to the position in the output list of the transaction (identified by its id)\n that produced that output",
+      "anyOf": [
+        {
+          "title": "OutputReference",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "transaction_id",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "output_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "guard/types/GuardDatum": {
+      "title": "GuardDatum",
+      "description": "Mutable guard state, carried as the inline datum on the singleton guard UTxO.\n\n Config fields (agent, caps, window_len, min_principal, max_spends, expiry,\n kill) are OWNER-controlled invariants: the agent branch must forward them\n unchanged. Only `spends` may change on the agent branch, and only by pruning\n aged-out records and prepending the current one per the sliding-window rule.",
+      "anyOf": [
+        {
+          "title": "GuardDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "agent",
+              "description": "Server session key hash — the bounded (agent) authority.",
+              "$ref": "#/definitions/aiken~1crypto~1VerificationKeyHash"
+            },
+            {
+              "title": "per_tx_cap",
+              "description": "Max net ADA (lovelace) outflow the guard may lose in a single agent tx.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "daily_cap",
+              "description": "Max cumulative net ADA outflow over ANY trailing `window_len` interval.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "window_len",
+              "description": "Sliding window length in POSIX ms (e.g. 86_400_000 = 24h).",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "spends",
+              "description": "Active outflow records within the current window (state). Newest first.",
+              "$ref": "#/definitions/List<guard~1types~1SpendRecord>"
+            },
+            {
+              "title": "min_principal",
+              "description": "The guard's continuing output must keep at least this much ADA; below it\n the agent branch is disabled (a defined, owner-sweepable state).",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "max_spends",
+              "description": "Upper bound on the active record list — caps datum growth and rate-limits\n by count as well as value.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "expiry",
+              "description": "POSIX ms hard session expiry; after this only the owner branch spends.",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "kill",
+              "description": "Owner-flipped kill switch; True disables the agent branch entirely.",
+              "$ref": "#/definitions/Bool"
+            }
+          ]
+        }
+      ]
+    },
+    "guard/types/GuardRedeemer": {
+      "title": "GuardRedeemer",
+      "anyOf": [
+        {
+          "title": "OwnerSpend",
+          "description": "Unrestricted root branch (owner/phone signature). Retune / revoke / sweep.",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "AgentSpend",
+          "description": "Bounded branch (agent session key). Allowed only within the on-chain caps.",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "guard/types/SpendRecord": {
+      "title": "SpendRecord",
+      "description": "One recorded net-ADA outflow on the agent branch, stamped with the tx's\n window clock (`now`). The rolling daily cap is enforced over the set of\n records still inside the trailing `window_len`.",
+      "anyOf": [
+        {
+          "title": "SpendRecord",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "at",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "amount",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
