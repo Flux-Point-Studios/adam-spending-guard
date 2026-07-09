@@ -1,5 +1,16 @@
 # Security findings — ADAM guard v2 (`v2-pinnable-spike`)
 
+> **RESOLUTION (F-1, F-2): FIXED** — `agent_spend_ok` now enforces token
+> conservation (`non_ada_conserved`): every native asset on the guard input must
+> remain on the continuation at ≥ its input quantity, so the agent can only
+> *acquire* tokens, never move them out. The two reproducers are flipped to `fail`
+> (now reject) in `security_findings_test.ak`, a `buy_grows_token_position_accepted`
+> test proves acquisition still works, and a focused red-team of the fixed
+> validator returned **GREEN** (0 confirmed across token_exfil / value / mint /
+> continuation / composed / double_sat). Autonomous *selling* of declared tokens is
+> being added via per-asset sliding-window quantity caps (next branch). F-3 stays a
+> threat-model note. Thanks to the reviewer — precise, reproducible, correct.
+
 Independent red-team of `agent_spend_ok` (`lib/guard/logic.ak`). Every finding below
 is **confirmed by execution** (`aiken check`, aiken v1.1.16, stdlib v3.1.0) — see
 `validators/security_findings_test.ak` for runnable reproducers.

@@ -59,6 +59,23 @@ fn agent_spend_ok(datum: GuardDatum, own_ref: OutputReference, tx: Transaction) 
   let assets_ok =
     list.length(assets.flatten(assets.without_lovelace(cont.value))) <= max_assets
 
+  // TOKEN CONSERVATION: every native asset on the guard INPUT must remain on the
+  // continuing output at >= its input quantity. The agent may only ACQUIRE tokens
+  // (a buy: ADA out, token in) — it can never move tokens OUT of the guard. This
+  // closes native-token exfiltration, which the lovelace-only `outflow` below
+  // does not see (a compromised agent could otherwise ship the guard's tokens
+  // out for free with outflow = 0). Realising a token position (token -> ADA) is
+  // deliberately an OWNER action, not on the bounded agent branch.
+  let non_ada_conserved =
+    list.foldl(
+      assets.flatten(assets.without_lovelace(guard_in.output.value)),
+      True,
+      fn(triple, acc) {
+        let (p, n, q) = triple
+        acc && quantity_of(cont.value, p, n) >= q
+      },
+    )
+
   expect Finite(lo) = tx.validity_range.lower_bound.bound_type
   expect Finite(hi) = tx.validity_range.upper_bound.bound_type
   let range_ok = hi >= lo && hi - lo <= max_skew
@@ -99,6 +116,7 @@ fn agent_spend_ok(datum: GuardDatum, own_ref: OutputReference, tx: Transaction) 
     not_killed,
     cont_to_guard,
     assets_ok,
+    non_ada_conserved,
     range_ok,
     not_expired,
     per_tx_ok,

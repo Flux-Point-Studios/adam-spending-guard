@@ -13,7 +13,7 @@ use cardano/address
 use cardano/assets.{Value}
 use cardano/transaction.{InlineDatum, Input, NoDatum, Output, OutputReference, Transaction}
 use guard/logic
-use guard/types.{AgentSpend, GuardDatum}
+use guard/types.{AgentSpend, GuardDatum, SpendRecord}
 
 const owner_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000a"
 const agent_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000b"
@@ -41,9 +41,9 @@ fn cont_o(v: Value, d: GuardDatum) -> Output { Output { address: guard_addr(), v
 fn steal(v: Value) -> Output { Output { address: address.from_verification_key(attacker_key), value: v, datum: NoDatum, reference_script: None } }
 fn okr() { interval.between(1_000_000_000_000, 1_000_000_060_000) }
 
-/// F-1: agent drains 1000·T to an attacker while ADA is unchanged (outflow = 0).
-/// The guard ACCEPTS this today — VULNERABILITY. (Flip to `fail` after the fix.)
-test known_gap_token_exfiltration_accepted() {
+/// F-1 (FIXED): agent tries to drain 1000·T to an attacker while ADA is unchanged
+/// (outflow = 0). Token conservation now REJECTS it.
+test token_exfiltration_rejected() fail {
   let d = base_datum()
   let tx = Transaction { ..transaction.placeholder,
     inputs: [ginput(stt_ada_tok(100_000_000, 1000), d)],
@@ -52,13 +52,27 @@ test known_gap_token_exfiltration_accepted() {
   logic.spend_ok(d, AgentSpend, own_ref(), tx)
 }
 
-/// F-2: drain hidden by negative outflow (ada_out > ada_in) — no spend record written.
-/// The guard ACCEPTS this today — VULNERABILITY. (Flip to `fail` after the fix.)
-test known_gap_negative_outflow_token_drain_accepted() {
+/// F-2 (FIXED): drain hidden by negative outflow (ada_out > ada_in). Token
+/// conservation now REJECTS it regardless of the ADA direction.
+test negative_outflow_token_drain_rejected() fail {
   let d = base_datum()
   let tx = Transaction { ..transaction.placeholder,
     inputs: [ginput(stt_ada_tok(50_000_000, 500), d)],
     outputs: [cont_o(stt_ada(60_000_000), d), steal(assets.from_lovelace(2_000_000) |> assets.add(token_policy, token_name, 500))],
+    extra_signatories: [agent_key], validity_range: okr() }
+  logic.spend_ok(d, AgentSpend, own_ref(), tx)
+}
+
+/// A legitimate BUY still passes: ADA leaves within cap, the token position GROWS
+/// (500 -> 600), STT + datum conserved — so the fix closes exfiltration without
+/// blocking token acquisition.
+test buy_grows_token_position_accepted() {
+  let d = base_datum()
+  let cont_d =
+    GuardDatum { ..d, spends: [SpendRecord { at: 1_000_000_060_000, amount: 10_000_000 }] }
+  let tx = Transaction { ..transaction.placeholder,
+    inputs: [ginput(stt_ada_tok(100_000_000, 500), d)],
+    outputs: [cont_o(stt_ada_tok(90_000_000, 600), cont_d)],
     extra_signatories: [agent_key], validity_range: okr() }
   logic.spend_ok(d, AgentSpend, own_ref(), tx)
 }
