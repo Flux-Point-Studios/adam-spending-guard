@@ -15,8 +15,9 @@ use cardano/transaction.{Transaction}
 
 validator state_token {
   mint(_redeemer: Data, policy_id: PolicyId, tx: Transaction) {
-    expect [Pair(name, amount)] =
-      tx.mint |> assets.tokens(policy_id) |> dict.to_pairs()
+    expect [Pair(name, amount)] = tx.mint
+      |> assets.tokens(policy_id)
+      |> dict.to_pairs()
     when amount is {
       // Mint the singleton: some input's OutputReference must hash to the token
       // name — that ties the name to a specific, single-use UTxO (one-shot).

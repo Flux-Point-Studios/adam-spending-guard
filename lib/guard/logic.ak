@@ -29,32 +29,41 @@ pub fn spend_ok(
   }
 }
 
-fn agent_spend_ok(datum: GuardDatum, own_ref: OutputReference, tx: Transaction) -> Bool {
+fn agent_spend_ok(
+  datum: GuardDatum,
+  own_ref: OutputReference,
+  tx: Transaction,
+) -> Bool {
   let agent_signed = list.has(tx.extra_signatories, datum.agent)
   let not_killed = !datum.kill
 
-  expect Some(own_input) =
-    list.find(tx.inputs, fn(i) { i.output_reference == own_ref })
+  expect Some(own_input) = list.find(
+    tx.inputs,
+    fn(i) { i.output_reference == own_ref },
+  )
   let guard_address = own_input.output.address
 
-  expect [Pair(stt_nm, 1)] =
-    own_input.output.value |> assets.tokens(datum.stt_policy) |> dict.to_pairs()
+  expect [Pair(stt_nm, 1)] = own_input.output.value
+    |> assets.tokens(datum.stt_policy)
+    |> dict.to_pairs()
 
-  let guard_inputs =
-    list.filter(tx.inputs, fn(i) { i.output.address == guard_address })
+  let guard_inputs = list.filter(
+    tx.inputs,
+    fn(i) { i.output.address == guard_address },
+  )
   expect [guard_in] = guard_inputs
   expect quantity_of(guard_in.output.value, datum.stt_policy, stt_nm) == 1
 
-  let stt_outputs =
-    list.filter(
-      tx.outputs,
-      fn(o) { quantity_of(o.value, datum.stt_policy, stt_nm) == 1 },
-    )
+  let stt_outputs = list.filter(
+    tx.outputs,
+    fn(o) { quantity_of(o.value, datum.stt_policy, stt_nm) == 1 },
+  )
   expect [cont] = stt_outputs
   let cont_to_guard = cont.address == guard_address
 
-  let assets_ok =
-    list.length(assets.flatten(assets.without_lovelace(cont.value))) <= max_assets
+  let assets_ok = list.length(
+    assets.flatten(assets.without_lovelace(cont.value)),
+  ) <= max_assets
 
   expect Finite(lo) = tx.validity_range.lower_bound.bound_type
   expect Finite(hi) = tx.validity_range.upper_bound.bound_type
@@ -63,44 +72,39 @@ fn agent_spend_ok(datum: GuardDatum, own_ref: OutputReference, tx: Transaction) 
   let not_expired = now < datum.expiry
 
   // Prune ALL records to the trailing window (shared window_len for ADA + tokens).
-  let active =
-    list.filter(
-      datum.spends,
-      fn(r) { r.at + datum.window_len >= now - max_skew },
-    )
+  let active = list.filter(
+    datum.spends,
+    fn(r) { r.at + datum.window_len >= now - max_skew },
+  )
 
   // ── ADA leg (records keyed by policy="" name="") ──
   let ada_out = lovelace_of(cont.value)
   let ada_outflow = lovelace_of(guard_in.output.value) - ada_out
   let ada_per_tx_ok = ada_outflow <= datum.per_tx_cap
   let floor_ok = ada_out >= datum.min_principal
-  let ada_daily_ok =
-    sum_active_for(active, #"", #"") + ada_outflow <= datum.daily_cap
-  let ada_records =
-    if ada_outflow > 0 {
-      [SpendRecord { policy: #"", name: #"", at: now, amount: ada_outflow }]
-    } else {
-      []
-    }
+  let ada_daily_ok = sum_active_for(active, #"", #"") + ada_outflow <= datum.daily_cap
+  let ada_records = if ada_outflow > 0 {
+    [SpendRecord { policy: #"", name: #"", at: now, amount: ada_outflow }]
+  } else {
+    []
+  }
 
   // ── Declared-token legs (each metered vs its own per_tx/daily quantity caps) ──
-  let (tokens_ok, token_records) =
-    meter_tokens(
-      datum.token_caps,
-      guard_in.output.value,
-      cont.value,
-      active,
-      now,
-    )
+  let (tokens_ok, token_records) = meter_tokens(
+    datum.token_caps,
+    guard_in.output.value,
+    cont.value,
+    active,
+    now,
+  )
 
   // ── Undeclared tokens must be conserved (acquire-only; never leave) ──
-  let undeclared_conserved =
-    conserve_undeclared(
-      guard_in.output.value,
-      cont.value,
-      datum.stt_policy,
-      datum.token_caps,
-    )
+  let undeclared_conserved = conserve_undeclared(
+    guard_in.output.value,
+    cont.value,
+    datum.stt_policy,
+    datum.token_caps,
+  )
 
   // Canonical new spends: [ADA record] ++ [token records in cap order] ++ active.
   let new_spends = list.concat(list.concat(ada_records, token_records), active)
@@ -132,7 +136,11 @@ fn agent_spend_ok(datum: GuardDatum, own_ref: OutputReference, tx: Transaction) 
 }
 
 /// Sum the amounts of active records matching (policy, name).
-fn sum_active_for(records: List<SpendRecord>, policy: ByteArray, name: ByteArray) -> Int {
+fn sum_active_for(
+  records: List<SpendRecord>,
+  policy: ByteArray,
+  name: ByteArray,
+) -> Int {
   list.foldl(
     records,
     0,
@@ -160,20 +168,28 @@ fn meter_tokens(
     (True, []),
     fn(cap, acc) {
       let (ok, recs) = acc
-      let outflow =
-        quantity_of(in_val, cap.policy, cap.name) - quantity_of(out_val, cap.policy, cap.name)
+      let outflow = quantity_of(in_val, cap.policy, cap.name) - quantity_of(
+        out_val,
+        cap.policy,
+        cap.name,
+      )
       let per_tx_ok = outflow <= cap.per_tx
-      let daily_ok =
-        sum_active_for(active, cap.policy, cap.name) + outflow <= cap.daily
-      let recs2 =
-        if outflow > 0 {
-          list.concat(
-            recs,
-            [SpendRecord { policy: cap.policy, name: cap.name, at: now, amount: outflow }],
-          )
-        } else {
-          recs
-        }
+      let daily_ok = sum_active_for(active, cap.policy, cap.name) + outflow <= cap.daily
+      let recs2 = if outflow > 0 {
+        list.concat(
+          recs,
+          [
+            SpendRecord {
+              policy: cap.policy,
+              name: cap.name,
+              at: now,
+              amount: outflow,
+            },
+          ],
+        )
+      } else {
+        recs
+      }
       (ok && per_tx_ok && daily_ok, recs2)
     },
   )

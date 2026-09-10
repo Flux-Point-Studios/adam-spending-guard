@@ -16,18 +16,36 @@
 use aiken/interval
 use cardano/address
 use cardano/assets.{Value}
-use cardano/transaction.{InlineDatum, Input, NoDatum, Output, OutputReference, Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+}
 use guard/logic
 use guard/types.{AgentSpend, AssetCap, GuardDatum}
 
-const owner_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000a"
-const agent_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000b"
-const attacker_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000c"
-const stt_policy: ByteArray = #"00000000000000000000000000000000000000000000000000000abc"
-const stt_name: ByteArray = #"9999999999999999999999999999999999999999999999999999999999999999"
-const guard_script: ByteArray = #"00000000000000000000000000000000000000000000000000000fff"
-const own_tx_id: ByteArray = #"1111111111111111111111111111111111111111111111111111111111111111"
-const token_policy: ByteArray = #"00000000000000000000000000000000000000000000000000000ddd"
+const owner_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000a"
+
+const agent_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000b"
+
+const attacker_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000c"
+
+const stt_policy: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000abc"
+
+const stt_name: ByteArray =
+  #"9999999999999999999999999999999999999999999999999999999999999999"
+
+const guard_script: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000fff"
+
+const own_tx_id: ByteArray =
+  #"1111111111111111111111111111111111111111111111111111111111111111"
+
+const token_policy: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000ddd"
+
 const token_name: ByteArray = #"7454"
 
 // Base datum with NO declared token caps: T is therefore an UNDECLARED asset that
@@ -54,7 +72,14 @@ fn base_datum() -> GuardDatum {
 fn declared_datum() -> GuardDatum {
   GuardDatum {
     ..base_datum(),
-    token_caps: [AssetCap { policy: token_policy, name: token_name, per_tx: 100, daily: 200 }],
+    token_caps: [
+      AssetCap {
+        policy: token_policy,
+        name: token_name,
+        per_tx: 100,
+        daily: 200,
+      },
+    ],
   }
 }
 
@@ -77,16 +102,31 @@ fn stt_ada_tok(ada: Int, tq: Int) -> Value {
 fn ginput(v: Value, d: GuardDatum) -> Input {
   Input {
     output_reference: own_ref(),
-    output: Output { address: guard_addr(), value: v, datum: InlineDatum(d), reference_script: None },
+    output: Output {
+      address: guard_addr(),
+      value: v,
+      datum: InlineDatum(d),
+      reference_script: None,
+    },
   }
 }
 
 fn cont_o(v: Value, d: GuardDatum) -> Output {
-  Output { address: guard_addr(), value: v, datum: InlineDatum(d), reference_script: None }
+  Output {
+    address: guard_addr(),
+    value: v,
+    datum: InlineDatum(d),
+    reference_script: None,
+  }
 }
 
 fn steal(v: Value) -> Output {
-  Output { address: address.from_verification_key(attacker_key), value: v, datum: NoDatum, reference_script: None }
+  Output {
+    address: address.from_verification_key(attacker_key),
+    value: v,
+    datum: NoDatum,
+    reference_script: None,
+  }
 }
 
 fn okr() {
@@ -98,17 +138,19 @@ fn okr() {
 /// continuation to keep >= 1000·T; it keeps 0 → REJECTED. (Was accepted on v2-pinnable.)
 test f1_token_exfiltration_now_rejected() fail {
   let d = base_datum()
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [ginput(stt_ada_tok(100_000_000, 1000), d)],
-      outputs: [
-        cont_o(stt_ada(100_000_000), d),
-        steal(assets.from_lovelace(2_000_000) |> assets.add(token_policy, token_name, 1000)),
-      ],
-      extra_signatories: [agent_key],
-      validity_range: okr(),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [ginput(stt_ada_tok(100_000_000, 1000), d)],
+    outputs: [
+      cont_o(stt_ada(100_000_000), d),
+      steal(
+        assets.from_lovelace(2_000_000)
+          |> assets.add(token_policy, token_name, 1000),
+      ),
+    ],
+    extra_signatories: [agent_key],
+    validity_range: okr(),
+  }
   logic.spend_ok(d, AgentSpend, own_ref(), tx)
 }
 
@@ -117,17 +159,19 @@ test f1_token_exfiltration_now_rejected() fail {
 /// ADA accounting. (Was accepted on v2-pinnable — no record, caps blind.)
 test f2_negative_outflow_token_drain_now_rejected() fail {
   let d = base_datum()
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [ginput(stt_ada_tok(50_000_000, 500), d)],
-      outputs: [
-        cont_o(stt_ada(60_000_000), d),
-        steal(assets.from_lovelace(2_000_000) |> assets.add(token_policy, token_name, 500)),
-      ],
-      extra_signatories: [agent_key],
-      validity_range: okr(),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [ginput(stt_ada_tok(50_000_000, 500), d)],
+    outputs: [
+      cont_o(stt_ada(60_000_000), d),
+      steal(
+        assets.from_lovelace(2_000_000)
+          |> assets.add(token_policy, token_name, 500),
+      ),
+    ],
+    extra_signatories: [agent_key],
+    validity_range: okr(),
+  }
   logic.spend_ok(d, AgentSpend, own_ref(), tx)
 }
 
@@ -136,16 +180,18 @@ test f2_negative_outflow_token_drain_now_rejected() fail {
 /// Declares per_tx=100; tries to move 500 out (input 500 → cont 0). REJECTED.
 test f1_declared_token_over_cap_now_rejected() fail {
   let d = declared_datum()
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [ginput(stt_ada_tok(50_000_000, 500), d)],
-      outputs: [
-        cont_o(stt_ada(52_000_000), d),
-        steal(assets.from_lovelace(2_000_000) |> assets.add(token_policy, token_name, 500)),
-      ],
-      extra_signatories: [agent_key],
-      validity_range: okr(),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [ginput(stt_ada_tok(50_000_000, 500), d)],
+    outputs: [
+      cont_o(stt_ada(52_000_000), d),
+      steal(
+        assets.from_lovelace(2_000_000)
+          |> assets.add(token_policy, token_name, 500),
+      ),
+    ],
+    extra_signatories: [agent_key],
+    validity_range: okr(),
+  }
   logic.spend_ok(d, AgentSpend, own_ref(), tx)
 }

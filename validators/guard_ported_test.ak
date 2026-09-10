@@ -16,8 +16,9 @@ use aiken/builtin
 use aiken/interval
 use cardano/address
 use cardano/assets.{Value}
-use cardano/transaction.{InlineDatum, Input, Output, OutputReference,
-  Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
 use guard/logic
 use guard/types.{AgentSpend, AssetCap, GuardDatum, OwnerSpend, SpendRecord}
 
@@ -74,7 +75,12 @@ fn saturn_datum() -> GuardDatum {
   GuardDatum {
     ..base_datum(),
     token_caps: [
-      AssetCap { policy: saturn_pol, name: saturn_name, per_tx: 500, daily: 1000 },
+      AssetCap {
+        policy: saturn_pol,
+        name: saturn_name,
+        per_tx: 500,
+        daily: 1000,
+      },
     ],
   }
 }
@@ -163,8 +169,10 @@ test honest_exact_per_tx_cap() {
 }
 
 test owner_unrestricted_passes() {
-  let tx =
-    Transaction { ..transaction.placeholder, extra_signatories: [owner_key] }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    extra_signatories: [owner_key],
+  }
   logic.spend_ok(base_datum(), OwnerSpend, own_ref(), tx)
 }
 
@@ -176,21 +184,19 @@ test honest_acquire_token_passes() {
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let cont =
-    Output {
-      address: guard_addr(),
-      value: guard_value(90_000_000) |> assets.add(saturn_pol, saturn_name, 50),
-      datum: InlineDatum(cont_d),
-      reference_script: None,
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let cont = Output {
+    address: guard_addr(),
+    value: guard_value(90_000_000) |> assets.add(saturn_pol, saturn_name, 50),
+    datum: InlineDatum(cont_d),
+    reference_script: None,
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -204,14 +210,13 @@ test sliding_multiple_active_within_cap_passes() {
   let r2 = ada_rec(hi - 1_000, 15_000_000)
   let d = GuardDatum { ..base_datum(), spends: [r2, r1] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000), r2, r1] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -222,18 +227,16 @@ test sliding_prunes_aged_record_passes() {
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
   // aged out only once window_len + max_skew of real time has passed
-  let old =
-    ada_rec(hi - d.window_len - logic.max_skew - 1_000, 45_000_000)
+  let old = ada_rec(hi - d.window_len - logic.max_skew - 1_000, 45_000_000)
   let d2 = GuardDatum { ..d, spends: [old] }
   let cont_d = GuardDatum { ..d2, spends: [ada_rec(hi, 15_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d2, 100_000_000)],
-      outputs: [cont_output(cont_d, 85_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d2, 100_000_000)],
+    outputs: [cont_output(cont_d, 85_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d2, tx)
 }
 
@@ -247,28 +250,31 @@ test sell_token_for_ada_passes() {
   let d = saturn_datum()
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
-  let in_val =
-    guard_value(100_000_000) |> assets.add(saturn_pol, saturn_name, 500)
-  let guard_in =
-    Input {
-      output_reference: own_ref(),
-      output: Output {
-        address: guard_addr(),
-        value: in_val,
-        datum: InlineDatum(d),
-        reference_script: None,
-      },
-    }
-  let tok_rec = SpendRecord { policy: saturn_pol, name: saturn_name, at: hi, amount: 500 }
+  let in_val = guard_value(100_000_000)
+    |> assets.add(saturn_pol, saturn_name, 500)
+  let guard_in = Input {
+    output_reference: own_ref(),
+    output: Output {
+      address: guard_addr(),
+      value: in_val,
+      datum: InlineDatum(d),
+      reference_script: None,
+    },
+  }
+  let tok_rec = SpendRecord {
+    policy: saturn_pol,
+    name: saturn_name,
+    at: hi,
+    amount: 500,
+  }
   let cont_d = GuardDatum { ..d, spends: [tok_rec] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_in],
-      outputs: [cont_output(cont_d, 108_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_in],
+    outputs: [cont_output(cont_d, 108_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -285,14 +291,13 @@ test attack_sliding_over_daily_cap() fail {
   let recent = ada_rec(hi - 1_000, 40_000_000)
   let d = GuardDatum { ..base_datum(), spends: [recent] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 20_000_000), recent] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 80_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 80_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -305,14 +310,13 @@ test attack_boundary_burst_blocked() fail {
   let recent = ada_rec(hi - 500, 45_000_000)
   let d = GuardDatum { ..base_datum(), spends: [recent] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 15_000_000), recent] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 85_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 85_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -325,14 +329,13 @@ test attack_forge_spends_reset() fail {
   let recent = ada_rec(hi - 500, 40_000_000)
   let d = GuardDatum { ..base_datum(), spends: [recent] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -345,14 +348,13 @@ test attack_exceed_max_spends() fail {
   let r2 = ada_rec(hi - 1_000, 1_000_000)
   let d = GuardDatum { ..base_datum(), max_spends: 2, spends: [r2, r1] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 1_000_000), r2, r1] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 99_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 99_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -365,21 +367,19 @@ test attack_dust_bloat_dos() fail {
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
   let cont_d = GuardDatum { ..d, spends: [] }
-  let cont =
-    Output {
-      address: guard_addr(),
-      value: add_dust(guard_value(100_000_000), 25),
-      datum: InlineDatum(cont_d),
-      reference_script: None,
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let cont = Output {
+    address: guard_addr(),
+    value: add_dust(guard_value(100_000_000), 25),
+    datum: InlineDatum(cont_d),
+    reference_script: None,
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -396,23 +396,21 @@ test attack_window_len_apart_burst_blocked() fail {
   let recent = ada_rec(at1, 40_000_000)
   let d = GuardDatum { ..d0, spends: [recent] }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 15_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 85_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 85_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
 test attack_no_agent_signature() fail {
-  let tx =
-    Transaction {
-      ..honest_tx(10_000_000),
-      extra_signatories: [attacker_key],
-    }
+  let tx = Transaction {
+    ..honest_tx(10_000_000),
+    extra_signatories: [attacker_key],
+  }
   check(base_datum(), tx)
 }
 
@@ -421,14 +419,13 @@ test attack_kill_switch_on() fail {
   let hi = lo + 60_000
   let d = GuardDatum { ..base_datum(), kill: True }
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -437,14 +434,13 @@ test attack_expired_session() fail {
   let lo = 2_000_000_050_000
   let hi = lo + 60_000
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -456,14 +452,13 @@ test attack_expiry_skew_bypass() fail {
   let lo = e - 1
   let hi = lo + 180_000
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -471,20 +466,18 @@ test attack_raise_own_cap() fail {
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
   let d = base_datum()
-  let cont_d =
-    GuardDatum {
-      ..d,
-      per_tx_cap: 999_000_000,
-      spends: [ada_rec(hi, 10_000_000)],
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let cont_d = GuardDatum {
+    ..d,
+    per_tx_cap: 999_000_000,
+    spends: [ada_rec(hi, 10_000_000)],
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -494,21 +487,19 @@ test attack_laundering_to_attacker_address() fail {
   let hi = lo + 60_000
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
-  let attacker_out =
-    Output {
-      address: address.from_verification_key(attacker_key),
-      value: guard_value(90_000_000),
-      datum: InlineDatum(cont_d),
-      reference_script: None,
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [attacker_out],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let attacker_out = Output {
+    address: address.from_verification_key(attacker_key),
+    value: guard_value(90_000_000),
+    datum: InlineDatum(cont_d),
+    reference_script: None,
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [attacker_out],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -518,37 +509,34 @@ test attack_sell_cannot_strand_stt() fail {
   let d = saturn_datum()
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
-  let in_val =
-    guard_value(100_000_000) |> assets.add(saturn_pol, saturn_name, 500)
-  let guard_in =
-    Input {
-      output_reference: own_ref(),
-      output: Output {
-        address: guard_addr(),
-        value: in_val,
-        datum: InlineDatum(d),
-        reference_script: None,
-      },
-    }
+  let in_val = guard_value(100_000_000)
+    |> assets.add(saturn_pol, saturn_name, 500)
+  let guard_in = Input {
+    output_reference: own_ref(),
+    output: Output {
+      address: guard_addr(),
+      value: in_val,
+      datum: InlineDatum(d),
+      reference_script: None,
+    },
+  }
   // everything (incl. the STT) leaves to the attacker. The STT-bearing output
   // even carries the correct canonical datum, so ONLY `cont_to_guard` trips: the
   // guard's continuation is not at the guard address.
   let stranded_d = GuardDatum { ..d, spends: [] }
-  let attacker_out =
-    Output {
-      address: address.from_verification_key(attacker_key),
-      value: guard_value(100_000_000) |> assets.add(saturn_pol, saturn_name, 500),
-      datum: InlineDatum(stranded_d),
-      reference_script: None,
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_in],
-      outputs: [attacker_out],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let attacker_out = Output {
+    address: address.from_verification_key(attacker_key),
+    value: guard_value(100_000_000) |> assets.add(saturn_pol, saturn_name, 500),
+    datum: InlineDatum(stranded_d),
+    reference_script: None,
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_in],
+    outputs: [attacker_out],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -559,49 +547,45 @@ test attack_double_satisfaction() fail {
   let hi = lo + 60_000
   let d = base_datum()
   let g_in = guard_input(d, 100_000_000)
-  let p_in =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: other_tx_id,
-        output_index: 0,
-      },
-      output: Output {
-        address: guard_addr(),
-        value: assets.from_lovelace(100_000_000),
-        datum: InlineDatum(d),
-        reference_script: None,
-      },
-    }
-  let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 20_000_000)] }
-  let attacker_out =
-    Output {
-      address: address.from_verification_key(attacker_key),
-      value: assets.from_lovelace(120_000_000),
-      datum: transaction.NoDatum,
+  let p_in = Input {
+    output_reference: OutputReference {
+      transaction_id: other_tx_id,
+      output_index: 0,
+    },
+    output: Output {
+      address: guard_addr(),
+      value: assets.from_lovelace(100_000_000),
+      datum: InlineDatum(d),
       reference_script: None,
-    }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [g_in, p_in],
-      outputs: [cont_output(cont_d, 80_000_000), attacker_out],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+    },
+  }
+  let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 20_000_000)] }
+  let attacker_out = Output {
+    address: address.from_verification_key(attacker_key),
+    value: assets.from_lovelace(120_000_000),
+    datum: transaction.NoDatum,
+    reference_script: None,
+  }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [g_in, p_in],
+    outputs: [cont_output(cont_d, 80_000_000), attacker_out],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
 test attack_unbounded_validity_range() fail {
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [ada_rec(0, 10_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [cont_output(cont_d, 90_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.everything,
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [cont_output(cont_d, 90_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.everything,
+  }
   check(d, tx)
 }
 
@@ -610,14 +594,13 @@ test attack_below_min_principal() fail {
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
   let cont_d = GuardDatum { ..d, spends: [ada_rec(hi, 20_000_000)] }
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 22_000_000)],
-      outputs: [cont_output(cont_d, 2_000_000)],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 22_000_000)],
+    outputs: [cont_output(cont_d, 2_000_000)],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }
 
@@ -625,20 +608,19 @@ test attack_no_continuing_output() fail {
   let d = base_datum()
   let lo = 1_000_000_050_000
   let hi = lo + 60_000
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [guard_input(d, 100_000_000)],
-      outputs: [
-        Output {
-          address: address.from_verification_key(attacker_key),
-          value: assets.from_lovelace(90_000_000),
-          datum: transaction.NoDatum,
-          reference_script: None,
-        },
-      ],
-      extra_signatories: [agent_key],
-      validity_range: interval.between(lo, hi),
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [guard_input(d, 100_000_000)],
+    outputs: [
+      Output {
+        address: address.from_verification_key(attacker_key),
+        value: assets.from_lovelace(90_000_000),
+        datum: transaction.NoDatum,
+        reference_script: None,
+      },
+    ],
+    extra_signatories: [agent_key],
+    validity_range: interval.between(lo, hi),
+  }
   check(d, tx)
 }

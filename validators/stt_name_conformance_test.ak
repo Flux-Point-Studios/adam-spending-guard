@@ -27,11 +27,10 @@ use cardano/transaction.{OutputReference}
 
 // all-1s tx, index 0: index 0 exercises CBOR uint width
 test stt_name_all1s_tx_index_0() {
-  let genesis =
-    OutputReference {
-      transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
-      output_index: 0,
-    }
+  let genesis = OutputReference {
+    transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
+    output_index: 0,
+  }
   let serialised = cbor.serialise(genesis)
   and {
     serialised == #"d8799f5820111111111111111111111111111111111111111111111111111111111111111100ff",
@@ -41,11 +40,10 @@ test stt_name_all1s_tx_index_0() {
 
 // all-1s tx, index 1: index 1 exercises CBOR uint width
 test stt_name_all1s_tx_index_1() {
-  let genesis =
-    OutputReference {
-      transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
-      output_index: 1,
-    }
+  let genesis = OutputReference {
+    transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
+    output_index: 1,
+  }
   let serialised = cbor.serialise(genesis)
   and {
     serialised == #"d8799f5820111111111111111111111111111111111111111111111111111111111111111101ff",
@@ -55,11 +53,10 @@ test stt_name_all1s_tx_index_1() {
 
 // realistic tx, index 7: index 7 exercises CBOR uint width
 test stt_name_realistic_tx_index_7() {
-  let genesis =
-    OutputReference {
-      transaction_id: #"de1dc0ffee0badf00dcafe0000feed00badc0ffee0dea1beefdeadbeef123456",
-      output_index: 7,
-    }
+  let genesis = OutputReference {
+    transaction_id: #"de1dc0ffee0badf00dcafe0000feed00badc0ffee0dea1beefdeadbeef123456",
+    output_index: 7,
+  }
   let serialised = cbor.serialise(genesis)
   and {
     serialised == #"d8799f5820de1dc0ffee0badf00dcafe0000feed00badc0ffee0dea1beefdeadbeef12345607ff",
@@ -69,11 +66,10 @@ test stt_name_realistic_tx_index_7() {
 
 // zeros tx, index 24: index 24 exercises CBOR uint width
 test stt_name_zeros_tx_index_24() {
-  let genesis =
-    OutputReference {
-      transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
-      output_index: 24,
-    }
+  let genesis = OutputReference {
+    transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
+    output_index: 24,
+  }
   let serialised = cbor.serialise(genesis)
   and {
     serialised == #"d8799f582000000000000000000000000000000000000000000000000000000000000000001818ff",
@@ -83,15 +79,13 @@ test stt_name_zeros_tx_index_24() {
 
 // all-f tx, index 256: index 256 exercises CBOR uint width
 test stt_name_allf_tx_index_256() {
-  let genesis =
-    OutputReference {
-      transaction_id: #"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-      output_index: 256,
-    }
+  let genesis = OutputReference {
+    transaction_id: #"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    output_index: 256,
+  }
   let serialised = cbor.serialise(genesis)
   and {
     serialised == #"d8799f5820ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff190100ff",
     blake2b_256(serialised) == #"342691bdfe783a0be69087fedb4a2a0c4aa906f37273eb91866f5e01b3fa509d",
   }
 }
-

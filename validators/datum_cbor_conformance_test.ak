@@ -16,10 +16,18 @@
 use aiken/cbor
 use guard/types.{AssetCap, GuardDatum, SpendRecord}
 
-const owner_vkh: ByteArray = #"00000000000000000000000000000000000000000000000000000a0a"
-const stt_pol: ByteArray = #"5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704"
-const agent_vkh: ByteArray = #"00000000000000000000000000000000000000000000000000000b0b"
-const tok_pol: ByteArray = #"00000000000000000000000000000000000000000000000000001111"
+const owner_vkh: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000a0a"
+
+const stt_pol: ByteArray =
+  #"5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704"
+
+const agent_vkh: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000b0b"
+
+const tok_pol: ByteArray =
+  #"00000000000000000000000000000000000000000000000000001111"
+
 const tok_name: ByteArray = "TKN"
 
 fn sample_datum() -> GuardDatum {
@@ -30,10 +38,22 @@ fn sample_datum() -> GuardDatum {
     per_tx_cap: 20_000_000,
     daily_cap: 50_000_000,
     window_len: 86_400_000,
-    token_caps: [AssetCap { policy: tok_pol, name: tok_name, per_tx: 500, daily: 1000 }],
+    token_caps: [
+      AssetCap { policy: tok_pol, name: tok_name, per_tx: 500, daily: 1000 },
+    ],
     spends: [
-      SpendRecord { policy: #"", name: #"", at: 1_000_000_060_000, amount: 10_000_000 },
-      SpendRecord { policy: tok_pol, name: tok_name, at: 1_000_000_060_000, amount: 300 },
+      SpendRecord {
+        policy: #"",
+        name: #"",
+        at: 1_000_000_060_000,
+        amount: 10_000_000,
+      },
+      SpendRecord {
+        policy: tok_pol,
+        name: tok_name,
+        at: 1_000_000_060_000,
+        amount: 300,
+      },
     ],
     min_principal: 5_000_000,
     max_spends: 10,

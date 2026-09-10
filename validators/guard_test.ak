@@ -5,22 +5,40 @@
 use aiken/interval
 use cardano/address
 use cardano/assets.{Value}
-use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
 use guard/logic
 use guard/types.{AgentSpend, AssetCap, GuardDatum, OwnerSpend, SpendRecord}
 
-const owner_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000a"
-const agent_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000b"
-const attacker_key: ByteArray = #"0000000000000000000000000000000000000000000000000000000c"
-const stt_policy: ByteArray = #"00000000000000000000000000000000000000000000000000000abc"
+const owner_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000a"
+
+const agent_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000b"
+
+const attacker_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000c"
+
+const stt_policy: ByteArray =
+  #"00000000000000000000000000000000000000000000000000000abc"
+
 const stt_name: ByteArray =
   #"9999999999999999999999999999999999999999999999999999999999999999"
-const tok_pol: ByteArray = #"00000000000000000000000000000000000000000000000000001111"
+
+const tok_pol: ByteArray =
+  #"00000000000000000000000000000000000000000000000000001111"
+
 const tok_name: ByteArray = "TKN"
-const und_pol: ByteArray = #"00000000000000000000000000000000000000000000000000002222"
+
+const und_pol: ByteArray =
+  #"00000000000000000000000000000000000000000000000000002222"
+
 const und_name: ByteArray = "UND"
+
 const guard_script: ByteArray =
   #"00000000000000000000000000000000000000000000000000000fff"
+
 const own_tx_id: ByteArray =
   #"1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -112,7 +130,10 @@ fn check(d: GuardDatum, tx: Transaction) -> Bool {
 test honest_ada_spend() {
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [ada_rec(10_000_000)] }
-  check(d, tx1(ginput(v_base(100_000_000), d), cont_o(v_base(90_000_000), cont_d)))
+  check(
+    d,
+    tx1(ginput(v_base(100_000_000), d), cont_o(v_base(90_000_000), cont_d)),
+  )
 }
 
 /// Sell 300·TKN (<= per_tx 500), receiving 10 ADA (ADA increases → no ADA record).
@@ -120,16 +141,33 @@ test honest_ada_spend() {
 test declared_token_sell_within_caps() {
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [tok_rec(300)] }
-  check(d, tx1(ginput(v_tok(50_000_000, 1000), d), cont_o(v_tok(60_000_000, 700), cont_d)))
+  check(
+    d,
+    tx1(
+      ginput(v_tok(50_000_000, 1000), d),
+      cont_o(v_tok(60_000_000, 700), cont_d),
+    ),
+  )
 }
 
 /// Sell exactly the daily remainder: prior 700 in-window, sell 300 → 1000 == daily.
 test declared_token_reaches_daily_cap() {
   let d = base_datum()
-  let prior = SpendRecord { policy: tok_pol, name: tok_name, at: hi - 1_000, amount: 700 }
+  let prior = SpendRecord {
+    policy: tok_pol,
+    name: tok_name,
+    at: hi - 1_000,
+    amount: 700,
+  }
   let start = GuardDatum { ..d, spends: [prior] }
   let cont_d = GuardDatum { ..start, spends: [tok_rec(300), prior] }
-  check(start, tx1(ginput(v_tok(50_000_000, 1000), start), cont_o(v_tok(50_000_000, 700), cont_d)))
+  check(
+    start,
+    tx1(
+      ginput(v_tok(50_000_000, 1000), start),
+      cont_o(v_tok(50_000_000, 700), cont_d),
+    ),
+  )
 }
 
 /// Acquiring an UNDECLARED token is fine (it's not on the input; can't leave later).
@@ -141,12 +179,11 @@ test buy_undeclared_token_ok() {
 }
 
 test owner_sweep_with_sig() {
-  let tx =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: [ginput(v_tok(100_000_000, 500), base_datum())],
-      extra_signatories: [owner_key],
-    }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    inputs: [ginput(v_tok(100_000_000, 500), base_datum())],
+    extra_signatories: [owner_key],
+  }
   logic.spend_ok(base_datum(), OwnerSpend, own_ref(), tx)
 }
 
@@ -156,16 +193,33 @@ test owner_sweep_with_sig() {
 test declared_token_over_per_tx_rejected() fail {
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [tok_rec(501)] }
-  check(d, tx1(ginput(v_tok(50_000_000, 1000), d), cont_o(v_tok(60_000_000, 499), cont_d)))
+  check(
+    d,
+    tx1(
+      ginput(v_tok(50_000_000, 1000), d),
+      cont_o(v_tok(60_000_000, 499), cont_d),
+    ),
+  )
 }
 
 /// Prior 800 in-window + sell 300 = 1100 > daily 1000.
 test declared_token_over_daily_rejected() fail {
   let d = base_datum()
-  let prior = SpendRecord { policy: tok_pol, name: tok_name, at: hi - 1_000, amount: 800 }
+  let prior = SpendRecord {
+    policy: tok_pol,
+    name: tok_name,
+    at: hi - 1_000,
+    amount: 800,
+  }
   let start = GuardDatum { ..d, spends: [prior] }
   let cont_d = GuardDatum { ..start, spends: [tok_rec(300), prior] }
-  check(start, tx1(ginput(v_tok(50_000_000, 1000), start), cont_o(v_tok(50_000_000, 700), cont_d)))
+  check(
+    start,
+    tx1(
+      ginput(v_tok(50_000_000, 1000), start),
+      cont_o(v_tok(50_000_000, 700), cont_d),
+    ),
+  )
 }
 
 /// Exfiltrate an UNDECLARED token that sits on the guard (U 500 -> 0). Rejected.
@@ -179,14 +233,30 @@ test undeclared_token_exfiltration_rejected() fail {
 /// Agent tries to widen a token cap in the continuing datum.
 test agent_cannot_raise_token_cap_rejected() fail {
   let d = base_datum()
-  let bad_caps = [AssetCap { policy: tok_pol, name: tok_name, per_tx: 1_000_000, daily: 9_000_000 }]
+  let bad_caps = [
+    AssetCap {
+      policy: tok_pol,
+      name: tok_name,
+      per_tx: 1_000_000,
+      daily: 9_000_000,
+    },
+  ]
   let cont_d = GuardDatum { ..d, token_caps: bad_caps, spends: [tok_rec(300)] }
-  check(d, tx1(ginput(v_tok(50_000_000, 1000), d), cont_o(v_tok(60_000_000, 700), cont_d)))
+  check(
+    d,
+    tx1(
+      ginput(v_tok(50_000_000, 1000), d),
+      cont_o(v_tok(60_000_000, 700), cont_d),
+    ),
+  )
 }
 
 /// ADA leg still enforced: over per_tx ADA cap.
 test ada_over_per_tx_rejected() fail {
   let d = base_datum()
   let cont_d = GuardDatum { ..d, spends: [ada_rec(20_000_001)] }
-  check(d, tx1(ginput(v_base(100_000_000), d), cont_o(v_base(79_999_999), cont_d)))
+  check(
+    d,
+    tx1(ginput(v_base(100_000_000), d), cont_o(v_base(79_999_999), cont_d)),
+  )
 }
