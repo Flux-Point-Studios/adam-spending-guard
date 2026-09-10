@@ -1,45 +1,52 @@
 use aiken/crypto.{VerificationKeyHash}
+use cardano/assets.{PolicyId}
 
-/// One recorded net-ADA outflow on the agent branch, stamped with the tx's
-/// window clock (`now`). The rolling daily cap is enforced over the set of
-/// records still inside the trailing `window_len`.
+/// A metered outflow record. `policy == "" && name == ""` denotes ADA (lovelace);
+/// otherwise it is the (policy, name) of a declared token. `amount` is the net
+/// quantity that left the guard, stamped `at` the tx's window clock.
 pub type SpendRecord {
+  policy: ByteArray,
+  name: ByteArray,
   at: Int,
   amount: Int,
 }
 
-/// Mutable guard state, carried as the inline datum on the singleton guard UTxO.
-///
-/// Config fields (agent, caps, window_len, min_principal, max_spends, expiry,
-/// kill) are OWNER-controlled invariants: the agent branch must forward them
-/// unchanged. Only `spends` may change on the agent branch, and only by pruning
-/// aged-out records and prepending the current one per the sliding-window rule.
+/// Owner-declared per-token cap (QUANTITY, not value — no oracle). The agent may
+/// move at most `per_tx` of this token out in one tx and `daily` over the sliding
+/// `window_len`. Immutable to the agent (datum-invariance).
+pub type AssetCap {
+  policy: ByteArray,
+  name: ByteArray,
+  per_tx: Int,
+  daily: Int,
+}
+
+/// Mutable guard state (inline datum on the singleton guard UTxO). v2 pinnable +
+/// per-asset caps: `owner` and `stt_policy` in the datum for hash-only client
+/// attestation; `token_caps` declares the tradeable-token set + quantity limits.
+/// Only `spends` changes on the agent branch — every other field is an
+/// owner-controlled invariant.
 pub type GuardDatum {
-  /// Server session key hash — the bounded (agent) authority.
+  owner: VerificationKeyHash,
+  stt_policy: PolicyId,
   agent: VerificationKeyHash,
-  /// Max net ADA (lovelace) outflow the guard may lose in a single agent tx.
+  /// ADA (lovelace) caps + the shared sliding window (ms).
   per_tx_cap: Int,
-  /// Max cumulative net ADA outflow over ANY trailing `window_len` interval.
   daily_cap: Int,
-  /// Sliding window length in POSIX ms (e.g. 86_400_000 = 24h).
   window_len: Int,
-  /// Active outflow records within the current window (state). Newest first.
+  /// Declared tradeable tokens the agent may SELL, each quantity-capped. Tokens
+  /// NOT listed here can be acquired but never leave the guard on the agent branch.
+  token_caps: List<AssetCap>,
+  /// Unified sliding-window records: ADA (policy/name = "") + one per declared
+  /// token, newest first.
   spends: List<SpendRecord>,
-  /// The guard's continuing output must keep at least this much ADA; below it
-  /// the agent branch is disabled (a defined, owner-sweepable state).
   min_principal: Int,
-  /// Upper bound on the active record list — caps datum growth and rate-limits
-  /// by count as well as value.
   max_spends: Int,
-  /// POSIX ms hard session expiry; after this only the owner branch spends.
   expiry: Int,
-  /// Owner-flipped kill switch; True disables the agent branch entirely.
   kill: Bool,
 }
 
 pub type GuardRedeemer {
-  /// Unrestricted root branch (owner/phone signature). Retune / revoke / sweep.
   OwnerSpend
-  /// Bounded branch (agent session key). Allowed only within the on-chain caps.
   AgentSpend
 }
