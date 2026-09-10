@@ -14,7 +14,7 @@ jobs:
         with:
           # Pinned to the compiler that reproducibly builds the DEPLOYED guard
           # bytes (spend hash ecb3ce03…). Bumping this must re-verify that hash.
-          version: v1.1.22
+          version: v1.1.23
       - run: aiken fmt --check
       - run: aiken check -D
       - run: aiken build
