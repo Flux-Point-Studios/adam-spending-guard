@@ -77,7 +77,7 @@ Reproducible from the committed compiled `plutus.json` via `aiken build`.
 
 | Artifact | Hash |
 |----------|------|
-| Guard `scriptHash` (`validators/guard.ak`) | `ecb3ce037188879d7fea47aa5e7eb4cbb1e24479816bf439e57acbc6` |
+| Guard `scriptHash` (`validators/guard.ak`) | `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8` |
 | STT `policyId` (`validators/state_token.ak`) | `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704` |
 
 Compiler: **Aiken v1.1.23+8949565**, stdlib **v3.1.0**, Plutus **V3** (pinned in

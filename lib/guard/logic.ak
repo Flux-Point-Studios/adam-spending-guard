@@ -60,6 +60,17 @@ fn agent_spend_ok(
   )
   expect [cont] = stt_outputs
   let cont_to_guard = cont.address == guard_address
+  let stt_singleton = dict.to_pairs(assets.tokens(cont.value, datum.stt_policy)) == [
+    Pair(stt_nm, 1),
+  ]
+  let no_ref_script = cont.reference_script == None
+
+  // The opening datum is not checked on chain: a non-positive window or record
+  // would void the rolling caps, so the agent branch refuses to run on one.
+  let history_ok = datum.window_len > 0 && list.all(
+    datum.spends,
+    fn(r) { r.amount > 0 },
+  )
 
   let assets_ok = list.length(
     assets.flatten(assets.without_lovelace(cont.value)),
@@ -120,7 +131,10 @@ fn agent_spend_ok(
   and {
     agent_signed,
     not_killed,
+    history_ok,
     cont_to_guard,
+    stt_singleton,
+    no_ref_script,
     assets_ok,
     undeclared_conserved,
     range_ok,

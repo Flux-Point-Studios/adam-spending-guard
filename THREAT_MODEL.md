@@ -18,7 +18,7 @@ are to `lib/guard/logic.ak` and `lib/guard/types.ak` in this repository.
 - **Toolchain:** Aiken v1.1.23+8949565, stdlib v3.1.0. Reproducible via
   `aiken build`.
 - **Final hashes (reproducible):**
-  - guard `scriptHash` = `ecb3ce037188879d7fea47aa5e7eb4cbb1e24479816bf439e57acbc6`
+  - guard `scriptHash` = `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8`
   - STT (`state_token`) `policyId` = `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704`
 
 ---
@@ -185,6 +185,17 @@ of any one fails the spend.
 | 15 | Record-count bound | `count_ok = list.length(new_spends) <= datum.max_spends` | 106-107 |
 | 16 | **Datum invariance** — agent may change ONLY `spends` | `datum_ok = cont_datum == GuardDatum { ..datum, spends: new_spends }` | 109-112 |
 | 17 | No STT re-mint on this branch | `no_stt_mint = quantity_of(tx.mint, stt_policy, stt_nm) == 0` | 114 |
+| 18 | Positive window and positive spend records | `history_ok = window_len > 0 && all spends amount > 0` | 70-73 |
+| 19 | Continuation holds only its own state token under the STT policy | `stt_singleton` | 63-65 |
+| 20 | Continuation carries no reference script | `no_ref_script = cont.reference_script == None` | 66 |
+
+Invariants 18-20 were added after the 2026-11-16 pre-mainnet audit, which changed the guard
+hash. Nothing on chain checks the opening datum, so a guard opened with a non-positive
+`window_len` or a non-positive spend record would have voided the rolling caps (18). An
+agent-key holder could park a second token of the STT policy on the continuation, which
+killed the agent branch for that guard (19), or attach a reference script to it (20).
+Accepted as a design limit: the agent may still acquire up to `max_assets` undeclared
+assets, whose min-ADA stays with them when the owner sweeps.
 
 Each invariant is detailed below.
 
@@ -371,7 +382,7 @@ params):
 
 1. **guard `scriptHash`** from the committed compiled `plutus.json` — pin by
    hashing the compiled code (no `apply_params`). Must equal
-   `ecb3ce03…e57acbc6`.
+   `1faf7dfa…5f1171f8`.
 2. **STT `policyId`** from the separate `state_token` blueprint — same hash-only
    pin. Must equal `5c48f601…c7d80704`. (This is where §7.3's external-policy
    trust is discharged: the client pins the audited one-shot policy id.)
@@ -453,7 +464,7 @@ aiken build      # produces plutus.json blueprints (compare to committed)
 
 - Compiler pinned: **Aiken v1.1.23+8949565**, Plutus **V3**.
 - stdlib pinned: **v3.1.0**.
-- Reproducible hashes: guard `scriptHash = ecb3ce03…e57acbc6`,
+- Reproducible hashes: guard `scriptHash = 1faf7dfa…5f1171f8`,
   STT `policyId = 5c48f601…c7d80704`.
 
 ---

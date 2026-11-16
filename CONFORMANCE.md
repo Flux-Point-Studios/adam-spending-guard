@@ -214,7 +214,7 @@ bound to *this* user with *this* consented cap set, compute all four:
 
 1. **Pin guard scriptHash** — hash the committed compiled guard code from the
    per-asset `plutus.json` and require it equals
-   `ecb3ce037188879d7fea47aa5e7eb4cbb1e24479816bf439e57acbc6`. The guard UTxO must sit
+   `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8`. The guard UTxO must sit
    at this script address.
 
 2. **Pin STT policyId** — hash the committed compiled `state_token` code from
