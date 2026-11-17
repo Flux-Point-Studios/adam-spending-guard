@@ -18,23 +18,35 @@ the owner-substitution case (INFO-1) isn't client-verifiable.
 
 1. **Guard script is UNPARAMETERIZED** (`validators/guard.ak`) → one universal
    address the wallet pins by hashing the compiled code. No apply_params.
-2. **STT policy is UNIVERSAL** (`validators/state_token.ak`) → pinnable policy
-   id. Uniqueness moves from a script param to the token **name**:
+2. **STT policy is UNIVERSAL** — the guard validator's own `mint` handler, so the
+   policy id is the guard script hash and one pin covers both. Uniqueness moves from a script param to the token **name**:
    `name = blake2b_256(cbor.serialise(genesis OutputReference))`, minted only if
-   that genesis UTxO is consumed (one-shot; +1 only; burn −1 only).
+   that genesis UTxO is consumed (one-shot; +1 only; burn −1 only). The token
+   only ever sits in a guard output on bounded terms whose current `datum.owner`
+   signed for it: the mint opens one, an owner spend burns the token or continues
+   the guard under the same rules (rules in `CONFORMANCE.md`, "STT lifetime
+   rules"). The burn checks nothing else.
 3. **`owner` and `stt_policy` move INTO the datum** (`lib/guard/types.ak`). The
    agent branch keeps them immutable (datum-invariance). The STT name is read
    dynamically from the spent input.
 
 ## What the wallet attests (hash-only, no apply_params)
 
-- deposit's guard output address == **pinned** universal guard address
-- the STT is the **pinned** universal policy, minted +1, and its **name ==
-  `hash(a genesis input in this deposit)`**
-- `datum.owner == my own key`  → the user can always sweep
-- `datum.stt_policy == pinned STT policy`
-- caps (`per_tx_cap` / `daily_cap` / `min_principal` / `expiry`) == what the user
-  consented to
+- the guard output's payment credential == the **pinned** guard script hash
+- the guard is located by the **exact STT unit the user minted**: policy = the
+  pinned guard hash, name = `hash(the genesis input of the user's own deposit)`;
+  never by "any token of the policy"
+- `datum.owner == my own key`  → the user can always withdraw
+- `datum.stt_policy == the pinned guard hash`
+- `agent`, `per_tx_cap`, `daily_cap`, `window_len`, `token_caps`, `min_principal`,
+  `max_spends` and `expiry` == what the user consented to
+- the deposit lists `datum.owner` as a required signer: the ledger refuses the
+  mint otherwise, and refuses any output receiving the STT outside the bounds it
+  enforces for every guard (window one hour to thirty days,
+  `0 < per_tx_cap <= daily_cap`, `min_principal >= 0` and held,
+  `1 <= max_spends <= 50`, at most 10 `token_caps` with `0 < per_tx <= daily`)
+
+Pinned hash: guard = STT policy `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`.
 
 Everything the "can't exceed your caps / you can always withdraw" promise rests
 on is now client-verifiable.
@@ -54,8 +66,8 @@ tests green.
 
 1. Port the full v1 adversarial suite (29 tests) + the ledger-consistency window
    proofs to the v2 datum shape; re-run the red-team on the final.
-2. Gateway: `GuardDatum` gains `owner` + `stt_policy`; `state_token` becomes
-   unparameterized; `guard` unparameterized; the deploy tx builder mints the STT
+2. Gateway: `GuardDatum` gains `owner` + `stt_policy`; `guard` unparameterized and
+   its own STT policy; the deploy tx builder mints the STT
    named `blake2b(genesis)` and sets the datum owner = the user's payment key.
 3. AdamKit / gateway: surface the pinned guard address + STT policy id (from the
    v2 `plutus.json`) so the wallet can hardcode them.

@@ -1,9 +1,10 @@
 # STT-name conformance vectors
 
-The ADAM guard v2 uses a **universal, unparameterized** state-thread token
-(`validators/state_token.ak`). Its *policy id* is fixed (so a client can pin it by
-hashing the compiled code — no `apply_params`), and per-guard uniqueness comes from
-the token **name**:
+The ADAM guard v2 uses a **universal, unparameterized** state-thread token (STT)
+minted by the guard validator itself (`validators/guard.ak`, the `mint` handler), so
+its *policy id* is the guard script hash (fixed; a client pins it by hashing the
+compiled code — no `apply_params`). Per-guard uniqueness comes from the token
+**name**:
 
 ```
 name = blake2b_256( cbor.serialise(genesis_out_ref) )
@@ -13,7 +14,8 @@ where `genesis_out_ref` is the `OutputReference` of a UTxO consumed in the mint 
 That UTxO can be spent only once, so each name can be minted only once (one-shot).
 
 An off-chain host (the Gero iOS wallet) attests a guard **hash-only**: it pins the
-guard script hash + STT policy id, reads the datum, and checks `datum.owner == myKey`.
+guard script hash (which is also the STT policy id), reads the datum, and checks it
+against what the user consented to.
 To also verify the STT is *this guard's* singleton it must recompute the name — which
 means reproducing `cbor.serialise(OutputReference)` **byte-for-byte**. This file is
 that interop contract.
@@ -155,7 +157,7 @@ record `300`, both stamped `at=1_000_000_060_000`), `min_principal=5_000_000`,
 ```
 d8799f                                     GuardDatum = Constr 0, [
   581c 00…000a0a                             owner        (28-byte VKH)
-  581c 5c48f601…c7d80704                      stt_policy   (28-byte PolicyId = pinned STT)
+  581c 785306d6…6754716a                      stt_policy   (28-byte PolicyId = guard hash)
   581c 00…000b0b                             agent        (28-byte VKH)
   1a01312d00                                 per_tx_cap   20_000_000
   1a02faf080                                 daily_cap    50_000_000
@@ -192,13 +194,13 @@ ff                                         ]
 Full pinned bytes (`cbor.serialise(sample_datum)`):
 
 ```
-d8799f581c00000000000000000000000000000000000000000000000000000a0a581c5c48f6
-01de2cf0a92d20f351e89704ec85871fafff310cebc7d80704581c000000000000000000000000
-00000000000000000000000000000b0b1a01312d001a02faf0801a05265c009fd8799f581c0000
+d8799f581c00000000000000000000000000000000000000000000000000000a0a581c785306d6
+add9549d2cfce3d6290ea4cf56f03903310232166754716a581c00000000000000000000000000
+000000000000000000000000000b0b1a01312d001a02faf0801a05265c009fd8799f581c000000
 0000000000000000000000000000000000000000000000111143544b4e1901f41903e8ffff9fd8
-799f40401b000000e8d4a5fa601a00989680ffd8799f581c0000000000000000000000000000000
-0000000000000000000111143544b4e1b000000e8d4a5fa6019012cffff1a004c4b400a1b000001
-d1a94a2000d87980ff
+799f40401b000000e8d4a5fa601a00989680ffd8799f581c000000000000000000000000000000
+0000000000000000000000111143544b4e1b000000e8d4a5fa6019012cffff1a004c4b400a1b00
+0001d1a94a2000d87980ff
 ```
 
 (One contiguous hex string — line-wrapped here only for display; see the test file for
@@ -206,40 +208,121 @@ the unwrapped literal.)
 
 ---
 
-# Client attestation checklist (4 parts)
+# Client attestation checklist
 
 The host trusts a guard **hash-only** (no `apply_params` — the validator is one
-universal, pinnable script). To attest that a given guard UTxO is a genuine ADAM guard
-bound to *this* user with *this* consented cap set, compute all four:
+universal, pinnable script that is also the STT policy). To attest that a guard UTxO is
+the genuine ADAM guard this user opened, on the terms this user consented to:
 
-1. **Pin guard scriptHash** — hash the committed compiled guard code from the
-   per-asset `plutus.json` and require it equals
-   `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8`. The guard UTxO must sit
-   at this script address.
-
-2. **Pin STT policyId** — hash the committed compiled `state_token` code from
+1. **Pin the guard script hash** — hash the committed compiled `guard` code from
    `plutus.json` and require it equals
-   `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704`. This is the universal
-   STT policy for *all* guards.
+   `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`. The guard UTxO's payment
+   credential must be this script. The same hash is the **STT policy id**: there is no
+   separate policy to pin.
 
-3. **Recompute the STT name** — apply the STT-name rule
-   `blake2b_256(cbor.serialise(genesis_out_ref))` for the guard's genesis outref and
-   require the guard UTxO carries exactly one token `(stt_policyId, name)` of quantity
-   1. Reproduce `cbor.serialise(OutputReference)` per the "STT-name conformance
-   vectors" section above (indefinite array; Plutus `Data`, not CSL). This binds the
-   singleton to *this* guard, not just to the shared policy.
+2. **Locate the guard by the exact STT unit the user minted** — the unit is
+   `policy = the guard hash` + `name = blake2b_256(cbor.serialise(genesis_out_ref))`,
+   where `genesis_out_ref` is the input the user's own deposit consumed. Reproduce
+   `cbor.serialise(OutputReference)` per the "STT-name conformance vectors" section
+   (indefinite array; Plutus `Data`, not CSL). Require the UTxO carries exactly one token
+   of the policy, this name, quantity 1. Never accept "any token of the policy": a
+   guard someone else opened carries a genuine token too.
 
-4. **Decode the GuardDatum + verify ownership and consent** — decode the inline datum
-   per the "GuardDatum CBOR" section above and check
-   `datum.owner == myKey` **and** `datum.token_caps == the user-consented set`
-   (same policies/names/per_tx/daily the user actually approved). Also sanity-check
-   `datum.stt_policy` equals the pinned STT policyId from step 2.
+3. **Decode the GuardDatum and pin every consented term** — decode the inline datum per
+   the "GuardDatum CBOR" section and require `owner == myKey`, `stt_policy == the guard
+   hash`, and `agent`, `per_tx_cap`, `daily_cap`, `window_len`, `token_caps`,
+   `min_principal`, `max_spends` and `expiry` equal what the user consented to.
 
-> Threat-model note (fable F-3, LOW, carried forward by design): the guard's
-> `no_stt_mint` check pins only its own STT name, so the *singleton* invariant of the
-> universal STT policy relies on the **separate, audited `state_token` one-shot minting
-> policy** — not on the guard alone. Step 3 (recompute + require quantity 1) is what
-> ties the guard you are attesting to a genuine one-shot mint.
+What the ledger already guarantees for any output carrying a token of the policy
+(the "STT lifetime rules" below): it sits at the guard script under an inline
+`GuardDatum` naming the policy, its terms are within the bounds, and its current
+`datum.owner` signed the transaction that put it there.
+
+> Threat-model note (fable F-3, carried forward): the agent branch's `no_stt_mint` check
+> pins only its own STT name. The singleton invariant of the policy is enforced by the
+> mint handler of the same script (one-shot name, quantity 1) and by the lifetime
+> rules below.
+
+---
+
+# STT lifetime rules (tx-builders MUST satisfy)
+
+A token of the policy only ever sits in an output that `guard_output`
+(`lib/guard/logic.ak`) admits. Three transactions touch it:
+
+- **Mint (`+1`, `mint_ok`)** opens a guard.
+- **Owner spend (`OwnerSpend`, `owner_spend_ok`)** of a UTxO that carries a token either
+  **burns** it (`-1` in the same transaction) or **continues** the guard into an output
+  that `guard_output` admits, with `spends` copied unchanged from the input datum.
+  Moving the token anywhere else (a wallet, another script) is refused.
+- **Agent spend** keeps the datum (only `spends` changes) at the same full address.
+
+## Rules `guard_output` applies (mint and owner continuation alike)
+
+| Rule | Requirement |
+|---|---|
+| Destination | exactly one output carries the token; its payment credential is the guard script hash (any stake credential, or none) |
+| Datum | an **inline** datum that decodes as a 12-field `GuardDatum` (no datum hash, no missing datum) |
+| `stt_policy` | equals the guard script hash |
+| `window_len` | `3_600_000 <= window_len <= 2_592_000_000` ms (one hour to thirty days) |
+| ADA caps | `0 < per_tx_cap <= daily_cap` |
+| `min_principal` | `>= 0`, and the output holds at least `min_principal` lovelace |
+| `max_spends` | `1 <= max_spends <= 50` |
+| `token_caps` | at most 10 entries, each with `0 < per_tx <= daily` |
+| Value | the only token of the policy on the output is this one (quantity 1); at most 20 distinct non-ADA assets |
+| Reference script | none |
+| Owner | the output datum's `owner` is in the transaction's **required signers** (`extra_signatories`) |
+
+## Mint only
+
+| Rule | Requirement |
+|---|---|
+| One-shot name | some input's `OutputReference` hashes to the token name |
+| Quantity | exactly one token of the policy minted, quantity `+1` |
+| `spends` | empty list (`80`) |
+| `kill` | `False` (`d87980`) |
+
+## Owner continuation only
+
+| Rule | Requirement |
+|---|---|
+| Signature | the input datum's `owner` signs (always, also for a burn or a sweep) |
+| `spends` | equal to the input datum's `spends` (records carry forward; the window is never reset by a retune) |
+| `kill` | free: the owner may set or clear it |
+| Owner change | allowed only if the new `owner` also signs (the rule above), so a handover needs both keys |
+| Stake credential | free: the owner may move the guard to any stake credential. The new owner's signature is what makes the output theirs; the stake credential carries no authority |
+
+The datum fields keep the order of the "GuardDatum CBOR" section above. `expiry`, `agent`
+and the `token_caps` asset ids are bounded only by consent; the wallet pins them
+(checklist step 3).
+
+## Withdrawal
+
+The **burn** (`-1`) checks nothing beyond the single token and its quantity. An owner
+withdrawal of a guard burns its token and takes everything with the owner's signature
+alone, whatever the datum holds. An output that carries no token of the policy is not
+a guard; see the next section.
+
+The **agent branch** applies the same `terms_ok` bounds on every spend.
+
+## Funds at the guard address that are not a guard
+
+An output at the guard address that carries no token of the policy is not a guard. The
+validator reads its datum from the output itself:
+
+- an **inline `GuardDatum`** (full decode): the guard rules run, so the key in its
+  `owner` field sweeps it with `OwnerSpend`;
+- **anything else** (no datum, a datum hash, an inline datum that is not a
+  `GuardDatum`): the key in the address's **stake credential** sweeps it, with either
+  redeemer. Under no stake credential, a script stake credential or a pointer, it stays
+  locked for good.
+
+An output that carries a token of the policy always runs the guard rules on its datum.
+
+ADAM's guard addresses have **no stake credential** (`validatorToAddress(net,
+guardScript)` in `guard-tx-builder.ts`): every ADAM guard shares one enterprise
+address, so a plain send to it stays locked. A send under an inline `GuardDatum` whose
+`owner` is the sender's key stays recoverable by that key.
 
 ---
 
@@ -272,14 +355,21 @@ Definitions the builder must match bit-for-bit:
 - **Prune predicate** for `pruned_active`: keep record `r` iff
   `r.at + window_len >= now - max_skew`, with **`max_skew = 180_000` ms**
   (`lib/guard/logic.ak`). Records older than the trailing window are dropped.
-- **Single guard input.** The validator does `expect [guard_in]` — there must be
-  **exactly one** input at the universal guard script address. The tx-builder must
-  **NEVER** add a second input at the guard address (fail-closed liveness caveat;
-  the shared-address double-satisfaction defense depends on it — regressioned in
-  `guard_redteam_test.ak`).
+- **Single guard input per full address.** The agent branch does `expect [guard_in]`
+  over the inputs whose **full address** (payment and stake credential) equals the
+  spent guard's — there must be **exactly one** such input. The tx-builder must
+  **NEVER** add a second input at that address (fail-closed liveness caveat; the
+  shared-address double-satisfaction defense depends on it — regressioned in
+  `guard_redteam_test.ak`). Guards at the same script under different stake
+  credentials are different addresses; each continuation must return to its own.
 - **Continuation asset bound.** The continuation may carry at most `max_assets = 20`
   distinct non-ADA assets (`assets_ok`).
 - **Count bound.** `list.length(new_spends) <= datum.max_spends` (`count_ok`).
+- **At least one new record.** Every agent spend must move ADA (`ada_outflow > 0`) or a
+  declared token out (`writes_a_record`). A spend that moves nothing, only deposits, or
+  only acquires is refused, so `max_spends` also bounds how many agent spends fit in a
+  window. Every ADAM agent flow already does this: a buy pays ADA out, a sell or a
+  token reclaim moves a declared token out.
 
 Undeclared tokens are **acquire-only**: `conserve_undeclared` requires every non-ADA,
 non-STT, non-declared input asset to remain on the continuation at `>=` its input
