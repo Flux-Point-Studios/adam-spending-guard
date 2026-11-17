@@ -18,7 +18,7 @@ are to `lib/guard/logic.ak` and `lib/guard/types.ak` in this repository.
 - **Toolchain:** `aiken.toml` pins Aiken v1.1.23; the committed `plutus.json`
   was built with v1.1.22+39d6b04. stdlib v3.1.0. Reproducible via `aiken build`.
 - **Final hashes (reproducible):**
-  - guard `scriptHash` = STT `policyId` = `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac`
+  - guard `scriptHash` = STT `policyId` = `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`
     (one validator with a `spend` and a `mint` handler: the guard is its own
     state-token policy)
 
@@ -168,8 +168,12 @@ input's `spends` carried forward unchanged. So the owner can at any time:
   credential, as long as the new datum stays within the bounds;
 - **hand over** the guard to a new owner who co-signs.
 
-An output at the guard address that carries no token of the policy is not a guard;
-its datum's `owner` sweeps it with a signature and nothing else in the datum is read.
+An output at the guard address that carries no token of the policy is not a guard
+(`guard_spend_ok`, `stray_ok`). If its own datum field is an inline `GuardDatum`, the
+guard rules run and that datum's `owner` sweeps it. Otherwise (no datum, a datum hash,
+a foreign datum) the key in the address's stake credential sweeps it; under no stake
+credential or a script one it stays locked. ADAM guard addresses carry no stake
+credential, so a plain send to one is locked for good (§7.4).
 
 What the owner can no longer do is move the STT anywhere else (a wallet, another
 script, or a guard naming an owner who did not sign). That was the 2026-11-17
@@ -209,6 +213,7 @@ of any one fails the spend.
 | 18 | Terms within the bounds (§6.7) and positive spend records | `state_ok = terms_ok(datum) && all spends amount > 0` | 163-166, 247-259 |
 | 19 | Continuation holds only its own state token under the STT policy | `stt_singleton` | 63-65 |
 | 20 | Continuation carries no reference script | `no_ref_script = cont.reference_script == None` | 66 |
+| 21 | **Every agent spend writes a record** (ADA or a declared token leaves) | `writes_a_record = ada_records ++ token_records != []` | `agent_spend_ok` |
 
 Invariants 18-20 were added after the 2026-11-16 pre-mainnet audit; invariant 18 took its
 current form, the shared `terms_ok`, after the 2026-11-17 re-audit. Every output that
@@ -338,6 +343,11 @@ not a fund-loss risk).
 - **`assets_ok` / `max_assets = 20`** (`logic.ak:18, 56-57`): the continuation may
   carry at most 20 distinct non-ADA assets, preventing datum/UTxO bloat that could
   brick future spends.
+- **`writes_a_record`** (inv. 21): every agent spend adds at least one record, so
+  `max_spends` caps the agent's spends per window, not only its outflows. Without it
+  an agent spend that moved nothing (or only deposited) passed with caps and
+  records used up, and a compromised agent key could re-spend the guard every block
+  so the owner's kill or withdrawal lost every race until expiry.
 - **`count_ok` / `max_spends`** (`logic.ak:106-107`): the `spends` ledger is
   length-bounded.
 - **`not_expired`** (`logic.ak:63`): once `now >= datum.expiry` the agent is
@@ -413,22 +423,24 @@ Measured with `aiken tx simulate` on transactions built against the compiled
 
 | Transaction | mem | cpu |
 |---|---|---|
-| Owner withdrawal: spend + STT burn, any datum (empty, 50 records + 10 caps, 1,700 records, out of bounds) | 86,931 + 32,101 | 27,272,267 + 8,528,812 |
-| Owner sweep of a UTxO without an STT, undecodable datum | 60,728 | 19,497,217 |
-| Owner retune (agent, caps, window, expiry) | 290,753 | 97,997,440 |
-| Owner retune or top-up at the bounds (50 records, 10 caps) | 987,155 | 357,484,544 |
-| Mint, honest opening | 256,815 | 89,363,310 |
-| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 451,359 | 153,292,380 |
-| Agent spend, 1 declared token, no prior records | 598,356 | 198,251,041 |
-| Agent spend, 1 declared token, 48 live records, 19 tokens held | 4,315,286 | 1,379,510,399 |
-| Agent spend at the bounds: 10 caps, 48 live records, 19 tokens + STT held | 8,006,463 (57%) | 2,528,773,180 (25%) |
+| Owner withdrawal: spend + STT burn, any datum (empty, 50 records + 10 caps, 1,700 records, out of bounds) | 122,760 + 32,801 | 39,897,073 + 8,640,812 |
+| Sweep of a non-guard output by its stake key (no datum, or a foreign datum) | 71,168 / 81,282 | 23,142,549 / 26,206,942 |
+| Sweep of a non-guard output under an inline `GuardDatum` by its owner (empty / 50 records + 10 caps) | 167,892 / 1,331,962 | 52,098,680 / 385,160,819 |
+| Owner retune (agent, caps, window, expiry) | 326,382 | 110,590,246 |
+| Owner retune or top-up at the bounds (50 records, 10 caps) | 1,022,784 | 370,077,350 |
+| Mint, honest opening | 257,315 | 89,443,310 |
+| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 451,859 | 153,372,380 |
+| Agent spend, 1 declared token, no prior records | 639,982 | 213,530,249 |
+| Agent spend, 1 declared token, 48 live records, 19 tokens held | 4,428,228 | 1,415,906,991 |
+| Agent spend at the bounds: 10 caps, 48 live records, 19 tokens + STT held | 8,119,405 (58%) | 2,565,169,772 (26%) |
 
 The withdrawal reads only `datum.owner`, so its cost does not grow with the datum. The
 unit tests that decode the whole datum first give the upper bound with a full decode:
 `owner_exits_at_the_record_and_token_cap_bounds` 1,128,122 mem / 349,401,516 cpu under
 `aiken check --trace-level silent`. The agent spend at the bounds leaves about 6M mem for
 the swap scripts that run in the same transaction. On the compiled script the plant, the
-unburned move of the STT to a wallet, and every out-of-bounds mint are refused.
+unburned move of the STT to a wallet, an agent spend that moves nothing, a stray sweep by
+a key other than the stake key, and every out-of-bounds mint are refused.
 
 ---
 
@@ -477,6 +489,10 @@ policy (§8, step 1). See Findings F-3 (§9).
   attestation (§8) pins them. A wallet must not sign a transaction that makes its key
   the owner of a guard it did not open and consent to, since that signature is what
   `guard_output` accepts as consent.
+- **Funds sent to an ADAM guard address without an inline `GuardDatum` are lost.**
+  ADAM guard addresses have no stake credential, so `stray_ok` has no key to release
+  them to. Wallets and exchanges must never pay a guard address directly; a guard with
+  the owner's stake credential would make such sends recoverable by that key.
 - **Duplicate `token_caps` entries, or an entry for the ADA sentinel (`""`, `""`),**
   only make the caps stricter (the same outflow is metered twice); the consent check
   rejects them off chain.
@@ -493,7 +509,7 @@ enabled by the unparameterized design (config is in the datum, not in script
 params). The full checklist is in `CONFORMANCE.md`:
 
 1. **guard `scriptHash`** from the committed compiled `plutus.json` — pin by hashing
-   the compiled code (no `apply_params`). Must equal `d7f32b57…6ba513ac`. It is also the
+   the compiled code (no `apply_params`). Must equal `785306d6…6754716a`. It is also the
    STT policy id.
 2. **Locate the guard by the exact STT unit the user minted**: the guard hash plus
    `blake2b_256(cbor.serialise(genesis OutputReference))` of the input the user's own
@@ -521,6 +537,8 @@ against this per-asset revision:
 | ADAM-AUD-055 | HIGH | A non-positive `window_len` pruned every record at once. | **CLOSED** — refused at mint and on the agent branch below one hour (inv. 18). `audit_2026_11_16_test.ak`; `opening_with_a_1ms_window_is_refused`. |
 | Re-audit 2026-11-17 #1 | — | An opening `spends` list of ~1,700 records was reported to push the owner exit to ~17.19M mem. | **CLOSED** at mint (`spends` empty, `max_spends <= 50`): `opening_with_1700_spend_records_is_refused`, `opening_with_max_spends_1700_is_refused`. The 17.19M figure came from a test that decodes the whole datum; the compiled owner branch costs 31,551 mem on that datum (§6.8), so owner exit was not blocked on chain. |
 | Red-team 2026-11-17 (look-alike guard) | HIGH | With no victim key, an attacker opened a guard they owned, owner-spent it into a copy of the victim's guard (owner = victim, agent = attacker) at the victim's stake address. The copy carried a genuine STT and passed client attestation; a top-up was then drainable by the attacker's agent, within the copied caps or entirely with greedy caps. | **CLOSED** — the guard is its own STT policy, and an owner spend must burn the STT or continue it into an output `guard_output` admits, signed by the new datum's owner (§5.1, §6.7): `attacker_cannot_plant_a_victim_owned_look_alike`, `a_look_alike_never_reaches_client_attestation`, `a_look_alike_cannot_drain_a_deposit_within_copied_caps`, `a_greedy_look_alike_cannot_drain_a_whole_deposit`, `owner_cannot_take_the_state_token_to_a_wallet`. Clients now locate a guard by the exact STT unit they minted and pin agent, caps, `min_principal` and `expiry` (§8). |
+| Red-team 2026-11-17 (no-op agent spends) | MEDIUM | An agent spend that moved no ADA or declared token wrote no record, so it passed with `daily_cap` and `max_spends` used up; a compromised agent key could re-spend the guard every block and win every race against the owner's kill or withdrawal until expiry. | **CLOSED** — every agent spend must write a record (inv. 21): `agent_cannot_spend_a_used_up_guard_moving_nothing`, `agent_cannot_spend_a_used_up_guard_by_depositing`, `agent_cannot_spend_a_fresh_guard_moving_nothing`, `agent_cannot_acquire_a_token_without_paying_for_it`; buys and sells still pass (`agent_buys_a_token_with_ada`, `agent_sells_a_declared_token_for_ada`). |
+| Red-team 2026-11-17 (stray funds) | LOW | An output at the guard address without a decodable `GuardDatum` could never be spent, the owner included. | **CLOSED where a key exists** — without a state token or an inline `GuardDatum` the address's stake key sweeps it (`a_datumless_send_is_swept_by_its_stake_key`, `a_send_with_a_foreign_datum_is_swept_by_its_stake_key`, `a_send_under_a_datum_hash_is_swept_by_its_stake_key`). Under no stake credential or a script one it stays locked (`…_without_a_stake_credential_stays_locked`, `…_under_a_script_stake_credential_stays_locked`), which is every ADAM guard address today (§7.4). |
 | Re-audit 2026-11-17 #2 | HIGH | `window_len = 1` ms let the agent move `daily_cap` every ~181 s and voided `max_spends`. | **CLOSED** — one-hour floor at mint and on the agent branch: `opening_with_a_1ms_window_is_refused`, `agent_refuses_a_1ms_window_that_resets_the_daily_cap`. |
 
 ---
@@ -557,7 +575,7 @@ when the real slot is in `[lo, hi]` with `hi - lo <= max_skew`, so "fast-forward
 
 ---
 
-## 11. Test suite (all green under `aiken check` — 136 tests)
+## 11. Test suite (all green under `aiken check` — 151 tests)
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -568,21 +586,21 @@ when the real slot is in `[lo, hi]` with `hi - lo <= max_skew`, so "fast-forward
 | `guard_redteam_test.ak` | 10 | singleton / STT / window / datum-invariance regressions |
 | `datum_cbor_conformance_test.ak` | 1 | pins `cbor.serialise(GuardDatum)` for a concrete 12-field datum |
 | `audit_2026_11_16_test.ak` | 9 | 2026-11-16 audit: history, second-STT and reference-script refusals; owner sweeps a poisoned guard |
-| `audit_2026_11_17_test.ak` | 73 | STT lifetime rules (§6.7): mint, owner continuation, look-alike plant; agent-branch terms; withdrawal, retune and agent spend at the bounds |
+| `audit_2026_11_17_test.ak` | 88 | STT lifetime rules (§6.7): mint, owner continuation, look-alike plant; agent spends must write a record; stray funds; agent-branch terms; withdrawal, retune and agent spend at the bounds |
 
 ---
 
 ## 12. Build & reproduce
 
 ```
-aiken check      # type-check + run the full test suite (136 tests)
+aiken check      # type-check + run the full test suite (151 tests)
 aiken build      # produces plutus.json blueprints (compare to committed)
 ```
 
 - Compiler pinned in `aiken.toml`: **Aiken v1.1.23**; `plutus.json` built with
   v1.1.22+39d6b04. Plutus **V3**.
 - stdlib pinned: **v3.1.0**.
-- Reproducible hash: guard `scriptHash` = STT `policyId` = `d7f32b57…6ba513ac`.
+- Reproducible hash: guard `scriptHash` = STT `policyId` = `785306d6…6754716a`.
 
 ---
 

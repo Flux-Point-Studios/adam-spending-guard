@@ -15,7 +15,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto.{blake2b_256}
 use aiken/interval.{Finite}
-use cardano/address.{Script}
+use cardano/address.{Inline, Script, VerificationKey}
 use cardano/assets.{AssetName, PolicyId, Value, lovelace_of, quantity_of}
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use guard/types.{
@@ -39,27 +39,72 @@ pub const max_spend_records: Int = 50
 
 pub const max_token_caps: Int = 10
 
+/// A spend of an output at the guard address. An output carrying a state token
+/// is a guard, and its datum is a `GuardDatum` by the state-token lifetime rules.
+/// Any other output is judged by its own datum field: an inline `GuardDatum`
+/// runs the guard rules, anything else goes to `stray_ok`.
+pub fn guard_spend_ok(
+  datum_opt: Option<GuardDatum>,
+  redeemer: GuardRedeemer,
+  own_ref: OutputReference,
+  tx: Transaction,
+) -> Bool {
+  let (own_output, policy) = own_guard_output(own_ref, tx)
+  if dict.is_empty(assets.tokens(own_output.value, policy)) {
+    when own_output.datum is {
+      InlineDatum(raw) ->
+        if raw is datum: GuardDatum {
+          spend_ok(datum, redeemer, own_ref, tx)
+        } else {
+          stray_ok(own_output, tx)
+        }
+      _ -> stray_ok(own_output, tx)
+    }
+  } else {
+    expect Some(datum) = datum_opt
+    spend_ok(datum, redeemer, own_ref, tx)
+  }
+}
+
 pub fn spend_ok(
   datum: GuardDatum,
   redeemer: GuardRedeemer,
   own_ref: OutputReference,
   tx: Transaction,
 ) -> Bool {
+  let (own_output, policy) = own_guard_output(own_ref, tx)
+  when redeemer is {
+    OwnerSpend -> owner_spend_ok(datum, own_output, policy, tx)
+    AgentSpend -> agent_spend_ok(datum, own_output, policy, tx)
+  }
+}
+
+/// Funds sent to the guard address without a state token or an inline
+/// `GuardDatum` (a plain wallet send, a foreign or hashed datum) are not a guard:
+/// the key in the address's stake credential takes them. Under no stake
+/// credential, or a script one, they stay locked.
+fn stray_ok(own_output: Output, tx: Transaction) -> Bool {
+  expect Some(Inline(VerificationKey(stake_key))) = own_output.address.stake_credential
+  list.has(tx.extra_signatories, stake_key)
+}
+
+/// The spent output and the policy id, which is the guard's own script hash.
+fn own_guard_output(
+  own_ref: OutputReference,
+  tx: Transaction,
+) -> (Output, PolicyId) {
   expect Some(own_input) = list.find(
     tx.inputs,
     fn(i) { i.output_reference == own_ref },
   )
   expect Script(policy) = own_input.output.address.payment_credential
-  when redeemer is {
-    OwnerSpend -> owner_spend_ok(datum, own_input.output, policy, tx)
-    AgentSpend -> agent_spend_ok(datum, own_input.output, policy, tx)
-  }
+  (own_input.output, policy)
 }
 
 /// The owner signs. Every state token on the spent output is either burned or
 /// continued into a guard `guard_output` admits, with the spend records carried
-/// forward. Nothing else in the datum is read, so an output without a state
-/// token is the owner's to sweep whatever the rest of its datum holds.
+/// forward. Nothing else in the datum is read, so a withdrawal never depends on
+/// the rest of the datum.
 fn owner_spend_ok(
   datum: GuardDatum,
   own_output: Output,
@@ -211,7 +256,11 @@ fn agent_spend_ok(
   )
 
   // Canonical new spends: [ADA record] ++ [token records in cap order] ++ active.
-  let new_spends = list.concat(list.concat(ada_records, token_records), active)
+  // Every agent spend writes at least one record, so max_spends also bounds how
+  // often the agent can spend, and race the owner, within a window.
+  let new_records = list.concat(ada_records, token_records)
+  let writes_a_record = new_records != []
+  let new_spends = list.concat(new_records, active)
   let count_ok = list.length(new_spends) <= datum.max_spends
 
   let expected_datum = GuardDatum { ..datum, spends: new_spends }
@@ -236,6 +285,7 @@ fn agent_spend_ok(
     floor_ok,
     ada_daily_ok,
     tokens_ok,
+    writes_a_record,
     count_ok,
     datum_ok,
     no_stt_mint,

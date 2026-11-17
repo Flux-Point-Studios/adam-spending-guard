@@ -157,7 +157,7 @@ record `300`, both stamped `at=1_000_000_060_000`), `min_principal=5_000_000`,
 ```
 d8799f                                     GuardDatum = Constr 0, [
   581c 00…000a0a                             owner        (28-byte VKH)
-  581c d7f32b57…6ba513ac                      stt_policy   (28-byte PolicyId = guard hash)
+  581c 785306d6…6754716a                      stt_policy   (28-byte PolicyId = guard hash)
   581c 00…000b0b                             agent        (28-byte VKH)
   1a01312d00                                 per_tx_cap   20_000_000
   1a02faf080                                 daily_cap    50_000_000
@@ -194,8 +194,8 @@ ff                                         ]
 Full pinned bytes (`cbor.serialise(sample_datum)`):
 
 ```
-d8799f581c00000000000000000000000000000000000000000000000000000a0a581cd7f32b57
-ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac581c00000000000000000000000000
+d8799f581c00000000000000000000000000000000000000000000000000000a0a581c785306d6
+add9549d2cfce3d6290ea4cf56f03903310232166754716a581c00000000000000000000000000
 000000000000000000000000000b0b1a01312d001a02faf0801a05265c009fd8799f581c000000
 0000000000000000000000000000000000000000000000111143544b4e1901f41903e8ffff9fd8
 799f40401b000000e8d4a5fa601a00989680ffd8799f581c000000000000000000000000000000
@@ -216,7 +216,7 @@ the genuine ADAM guard this user opened, on the terms this user consented to:
 
 1. **Pin the guard script hash** — hash the committed compiled `guard` code from
    `plutus.json` and require it equals
-   `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac`. The guard UTxO's payment
+   `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`. The guard UTxO's payment
    credential must be this script. The same hash is the **STT policy id**: there is no
    separate policy to pin.
 
@@ -300,11 +300,29 @@ and the `token_caps` asset ids are bounded only by consent; the wallet pins them
 
 The **burn** (`-1`) checks nothing beyond the single token and its quantity. An owner
 withdrawal of a guard burns its token and takes everything with the owner's signature
-alone, whatever the datum holds. An output at the guard address that carries no token
-of the policy is not a guard: the key in its datum's `owner` field sweeps it, and
-nothing else in that datum is read.
+alone, whatever the datum holds. An output that carries no token of the policy is not
+a guard; see the next section.
 
 The **agent branch** applies the same `terms_ok` bounds on every spend.
+
+## Funds at the guard address that are not a guard
+
+An output at the guard address that carries no token of the policy is not a guard. The
+validator reads its datum from the output itself:
+
+- an **inline `GuardDatum`** (full decode): the guard rules run, so the key in its
+  `owner` field sweeps it with `OwnerSpend`;
+- **anything else** (no datum, a datum hash, an inline datum that is not a
+  `GuardDatum`): the key in the address's **stake credential** sweeps it, with either
+  redeemer. Under no stake credential, a script stake credential or a pointer, it stays
+  locked for good.
+
+An output that carries a token of the policy always runs the guard rules on its datum.
+
+ADAM's guard addresses have **no stake credential** (`validatorToAddress(net,
+guardScript)` in `guard-tx-builder.ts`): every ADAM guard shares one enterprise
+address, so a plain send to it stays locked. A send under an inline `GuardDatum` whose
+`owner` is the sender's key stays recoverable by that key.
 
 ---
 
@@ -347,6 +365,11 @@ Definitions the builder must match bit-for-bit:
 - **Continuation asset bound.** The continuation may carry at most `max_assets = 20`
   distinct non-ADA assets (`assets_ok`).
 - **Count bound.** `list.length(new_spends) <= datum.max_spends` (`count_ok`).
+- **At least one new record.** Every agent spend must move ADA (`ada_outflow > 0`) or a
+  declared token out (`writes_a_record`). A spend that moves nothing, only deposits, or
+  only acquires is refused, so `max_spends` also bounds how many agent spends fit in a
+  window. Every ADAM agent flow already does this: a buy pays ADA out, a sell or a
+  token reclaim moves a declared token out.
 
 Undeclared tokens are **acquire-only**: `conserve_undeclared` requires every non-ADA,
 non-STT, non-declared input asset to remain on the continuation at `>=` its input

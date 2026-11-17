@@ -46,7 +46,7 @@ the owner-substitution case (INFO-1) isn't client-verifiable.
   `0 < per_tx_cap <= daily_cap`, `min_principal >= 0` and held,
   `1 <= max_spends <= 50`, at most 10 `token_caps` with `0 < per_tx <= daily`)
 
-Pinned hash: guard = STT policy `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac`.
+Pinned hash: guard = STT policy `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`.
 
 Everything the "can't exceed your caps / you can always withdraw" promise rests
 on is now client-verifiable.

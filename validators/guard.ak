@@ -24,8 +24,7 @@ validator guard {
     own_ref: OutputReference,
     tx: Transaction,
   ) {
-    expect Some(datum) = datum_opt
-    logic.spend_ok(datum, redeemer, own_ref, tx)
+    logic.guard_spend_ok(datum_opt, redeemer, own_ref, tx)
   }
 
   mint(_redeemer: Data, policy_id: PolicyId, tx: Transaction) {

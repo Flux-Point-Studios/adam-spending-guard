@@ -85,7 +85,7 @@ Reproducible from the committed compiled `plutus.json` via `aiken build`.
 
 | Artifact | Hash |
 |----------|------|
-| Guard `scriptHash` = STT `policyId` (`validators/guard.ak`, `spend` + `mint`) | `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac` |
+| Guard `scriptHash` = STT `policyId` (`validators/guard.ak`, `spend` + `mint`) | `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a` |
 
 Compiler: `aiken.toml` pins **Aiken v1.1.23** (CI); the committed `plutus.json` was
 built with **v1.1.22+39d6b04**. stdlib **v3.1.0**, Plutus **V3**.
@@ -98,12 +98,12 @@ deploy transaction mints with the guard script itself.
 ```sh
 export PATH="$HOME/.aiken/bin:$PATH"
 aiken build      # regenerates plutus.json and the hash above
-aiken check      # type-checks and runs all 136 tests
+aiken check      # type-checks and runs all 151 tests
 ```
 
 A reviewer should see: `aiken build` reproduce **exactly** the FINAL HASH above
 in `plutus.json` (byte-identical to the committed blueprint), and `aiken check` report
-**136 tests, all passing**, with no warnings from the guard sources.
+**151 tests, all passing**, with no warnings from the guard sources.
 
 ## Repo layout
 
@@ -114,7 +114,7 @@ validators/guard.ak       Validator entry points (unparameterized): spend, and m
                           the one-shot STT (name = blake2b_256 rule)
 ```
 
-Test suite (`validators/*_test.ak`, all green under `aiken check` — 136 tests):
+Test suite (`validators/*_test.ak`, all green under `aiken check` — 151 tests):
 
 | File | Tests | What it covers |
 |------|-------|----------------|
@@ -125,7 +125,7 @@ Test suite (`validators/*_test.ak`, all green under `aiken check` — 136 tests)
 | `guard_redteam_test.ak` | 10 | Singleton / STT / window / datum-invariance regressions that must fail-closed |
 | `datum_cbor_conformance_test.ak` | 1 | Pins `cbor.serialise(GuardDatum)` for a concrete 12-field datum |
 | `audit_2026_11_16_test.ak` | 9 | Non-positive window or spend record, second state token or reference script on the continuation REJECT; owner sweeps a poisoned guard |
-| `audit_2026_11_17_test.ak` | 73 | Every STT lifetime rule REJECTS its violation at mint and on owner continuation, the look-alike plant and its drains REJECT; honest openings, retunes, top-ups, handovers, withdrawals and burns PASS; the agent branch refuses out-of-bounds terms; budgets at the bounds |
+| `audit_2026_11_17_test.ak` | 88 | Every STT lifetime rule REJECTS its violation at mint and on owner continuation, the look-alike plant and its drains REJECT; agent spends that move nothing REJECT; stray funds go to the stake key or stay locked; honest openings, retunes, top-ups, handovers, withdrawals and burns PASS; the agent branch refuses out-of-bounds terms; budgets at the bounds |
 
 ## STT lifetime rules and budgets
 
@@ -140,21 +140,25 @@ needs empty `spends` and `kill = False`; an owner continuation needs the input's
 `spends` unchanged and the input owner's signature. An owner spend that does not
 continue the guard must burn the STT. The full tables are in
 [`CONFORMANCE.md`](./CONFORMANCE.md). The agent branch holds every guard to the same
-bounds.
+bounds, and every agent spend must move ADA or a declared token out (write a record),
+so `max_spends` also bounds how often the agent can spend in a window. An output at
+the guard address with no state token and no inline `GuardDatum` (a plain send) goes
+to the key in the address's stake credential, or stays locked if there is none, as on
+ADAM's unstaked guard addresses.
 
 Measured with `aiken tx simulate` on the compiled `plutus.json` (per-tx limit 14,000,000
 mem / 10,000,000,000 cpu):
 
 | Transaction | mem | cpu |
 |---|---|---|
-| Owner withdrawal (spend + STT burn), any datum incl. 1,700 records or out-of-bounds terms | 119,032 | 35,801,079 |
-| Owner sweep of a UTxO without an STT, undecodable datum | 60,728 | 19,497,217 |
-| Owner retune (agent, caps, window, expiry) | 290,753 | 97,997,440 |
-| Owner retune or top-up at the bounds (50 records, 10 caps) | 987,155 | 357,484,544 |
-| Mint, honest opening | 256,815 | 89,363,310 |
-| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 451,359 | 153,292,380 |
-| Agent spend, 1 declared token, no prior records | 598,356 | 198,251,041 |
-| Agent spend at the bounds (48 live records, 10 caps, 19 tokens + STT held) | 8,006,463 | 2,528,773,180 |
+| Owner withdrawal (spend + STT burn), any datum incl. 1,700 records or out-of-bounds terms | 155,561 | 48,537,885 |
+| Stray sweep by the stake key (no datum / foreign datum) | 71,168 / 81,282 | 23,142,549 / 26,206,942 |
+| Owner retune (agent, caps, window, expiry) | 326,382 | 110,590,246 |
+| Owner retune or top-up at the bounds (50 records, 10 caps) | 1,022,784 | 370,077,350 |
+| Mint, honest opening | 257,315 | 89,443,310 |
+| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 451,859 | 153,372,380 |
+| Agent spend, 1 declared token, no prior records | 639,982 | 213,530,249 |
+| Agent spend at the bounds (48 live records, 10 caps, 19 tokens + STT held) | 8,119,405 | 2,565,169,772 |
 
 Docs:
 

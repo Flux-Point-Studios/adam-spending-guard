@@ -1,6 +1,6 @@
 # Guard v2 — per-asset quantity caps (autonomous sell)
 
-> **STATUS: current pin guard scriptHash = STT policyId `d7f32b57...`; 136 aiken
+> **STATUS: current pin guard scriptHash = STT policyId `785306d6...`; 151 aiken
 > tests green. The per-asset model below is unchanged; the STT lifetime rules are
 > in CONFORMANCE.md. RED-TEAM-REPORT.md covers the earlier `ecb3ce03...` build.**
 
@@ -26,7 +26,7 @@ undeclared tokens, the STT, or the ADA floor (`min_principal`).
   pins the script by hashing the committed compiled code.
 - **Toolchain:** Aiken v1.1.23+8949565, stdlib v3.1.0.
 - **Final hashes** (reproducible via `aiken build`, present in `plutus.json`):
-  - guard scriptHash = STT policyId = `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac`
+  - guard scriptHash = STT policyId = `785306d6add9549d2cfce3d6290ea4cf56f03903310232166754716a`
 
 ## Model
 
@@ -118,7 +118,7 @@ Structural invariants the tx-builder must honor:
 What fable / AdamKit computes to trust a guard — **no `apply_params`, hash-only**:
 
 1. **Guard scriptHash** — from the compiled per-asset `plutus.json` (hash the
-   committed compiled code); pin `d7f32b57...`.
+   committed compiled code); pin `785306d6...`.
 2. **STT unit** — policy = the guard hash; locate the guard by the exact unit the
    user minted.
 3. **STT token name** — recompute via the CBOR rule
@@ -132,7 +132,7 @@ What fable / AdamKit computes to trust a guard — **no `apply_params`, hash-onl
 
 > **NOTE — what is unchanged vs NEW from fable's PR #1.** The STT **name rule**
 > (`blake2b_256(cbor.serialise(out_ref))`, CONFORMANCE.md vectors) is unchanged.
-> The STT **policyId** is new: it is the guard script hash (`d7f32b57...`), since
+> The STT **policyId** is new: it is the guard script hash (`785306d6...`), since
 > the guard validator mints the token itself. What is **NEW** is the **datum CBOR**: `GuardDatum` now has **12
 > fields** (adds `stt_policy`, `token_caps`, and unifies `spends` across ADA +
 > tokens). A pr1 datum decoder will NOT decode a per-asset datum — clients MUST
@@ -211,7 +211,7 @@ The validator is frozen. What remains is entirely off-chain, in the ADAM app rep
 - **agent-core tx-builder** — compute the canonical `spends` reconstruction above;
   never add a 2nd input at the universal guard address.
 - **AdamKit** — implement the 4-part hash-only per-asset attestation (pin
-  `d7f32b57...`, recompute the STT name per CONFORMANCE.md, decode
+  `785306d6...`, recompute the STT name per CONFORMANCE.md, decode
   the 12-field `GuardDatum`, verify owner + `token_caps == consent`).
 
 None of these can change the frozen hashes; they consume them.

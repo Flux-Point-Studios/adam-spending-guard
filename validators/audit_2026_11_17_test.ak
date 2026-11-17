@@ -897,8 +897,8 @@ test a_handover_signed_by_both_owners_passes() {
   )
 }
 
-/// Funds at the guard address without a state token are not a guard: the key
-/// in the datum's owner field sweeps them whatever the rest holds.
+/// Funds at the guard address without a state token, under an inline
+/// GuardDatum, are swept by that datum's owner whatever its terms.
 test owner_sweeps_a_utxo_without_a_state_token() {
   let d = GuardDatum { ..victim_terms(), window_len: -1, kill: True }
   handler_ok(
@@ -950,4 +950,236 @@ test minting_a_name_no_input_hashes_to_is_refused() fail {
     },
   }
   mints(Transaction { ..mint_tx([guard_output(opening())]), inputs: [other] })
+}
+
+// ── Agent spends that move nothing ──────────────────────────────────────────
+//
+// Red-team 2026-11-17 (MEDIUM): an agent spend that moves no ADA or declared
+// token out wrote no record, so it passed with daily_cap and max_spends used
+// up. The agent key could re-spend the guard every block and win every race
+// against the owner's kill or withdrawal until expiry.
+
+/// Ten 5 ADA records stamped just now: daily_cap 50 ADA and max_spends 10 used.
+fn exhausted() -> GuardDatum {
+  GuardDatum {
+    ..victim_terms(),
+    token_caps: [],
+    spends: list.repeat(ada_rec(hi - 1_000, 5_000_000), 10),
+  }
+}
+
+fn agent_moves(
+  start: GuardDatum,
+  before: Value,
+  after: Value,
+  d: GuardDatum,
+) -> Bool {
+  handler_ok(
+    start,
+    AgentSpend,
+    agent_tx(guard_input(before, start), continuation(after, d)),
+  )
+}
+
+test agent_cannot_spend_a_used_up_guard_moving_nothing() fail {
+  let d = exhausted()
+  agent_moves(d, stt_value(100_000_000), stt_value(100_000_000), d)
+}
+
+test agent_cannot_spend_a_used_up_guard_by_depositing() fail {
+  let d = exhausted()
+  agent_moves(d, stt_value(100_000_000), stt_value(100_000_001), d)
+}
+
+test agent_cannot_spend_a_fresh_guard_moving_nothing() fail {
+  let d = victim_terms()
+  agent_moves(d, stt_value(100_000_000), stt_value(100_000_000), d)
+}
+
+test agent_cannot_acquire_a_token_without_paying_for_it() fail {
+  let d = victim_terms()
+  agent_moves(
+    d,
+    stt_value(100_000_000),
+    stt_value(100_000_000) |> assets.add(pol(7), tok_name, 5),
+    d,
+  )
+}
+
+/// A sell: a declared token leaves and ADA comes in, which writes a token record.
+test agent_sells_a_declared_token_for_ada() {
+  let d = victim_terms()
+  let after = GuardDatum {
+    ..d,
+    spends: [
+      SpendRecord { policy: pol(1), name: tok_name, at: hi, amount: 100 },
+    ],
+  }
+  agent_moves(
+    d,
+    stt_value(100_000_000) |> assets.add(pol(1), tok_name, 500),
+    stt_value(110_000_000) |> assets.add(pol(1), tok_name, 400),
+    after,
+  )
+}
+
+/// A buy: ADA leaves and a token comes in, which writes an ADA record.
+test agent_buys_a_token_with_ada() {
+  let d = victim_terms()
+  let after = GuardDatum { ..d, spends: [ada_rec(hi, 10_000_000)] }
+  agent_moves(
+    d,
+    stt_value(100_000_000),
+    stt_value(90_000_000) |> assets.add(pol(7), tok_name, 5),
+    after,
+  )
+}
+
+test owner_kills_a_used_up_guard() {
+  let d = exhausted()
+  owner_retunes(d, GuardDatum { ..d, kill: True })
+}
+
+// ── Funds at the guard address that are not a guard ─────────────────────────
+//
+// Red-team 2026-11-17 (LOW): an output at the guard address with no datum, or
+// a datum that is not a GuardDatum (a plain wallet send), could never be spent.
+// Without a state token it is released to the address's stake key.
+
+fn stray_ref() -> OutputReference {
+  OutputReference {
+    transaction_id: #"9999999999999999999999999999999999999999999999999999999999999999",
+    output_index: 0,
+  }
+}
+
+fn stray_tx(
+  addr: address.Address,
+  v: Value,
+  datum: transaction.Datum,
+  signers: List<ByteArray>,
+) -> Transaction {
+  Transaction {
+    ..transaction.placeholder,
+    inputs: [
+      Input {
+        output_reference: stray_ref(),
+        output: Output {
+          address: addr,
+          value: v,
+          datum,
+          reference_script: None,
+        },
+      },
+    ],
+    outputs: [
+      Output {
+        address: address.from_verification_key(owner_key),
+        value: assets.from_lovelace(49_000_000),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    ],
+    extra_signatories: signers,
+  }
+}
+
+fn owner_staked() -> address.Address {
+  guard_address() |> address.with_delegation_key(owner_key)
+}
+
+/// The validator reads a non-guard output's datum from the output itself.
+fn sweeps(tx: Transaction) -> Bool {
+  guard_validator.guard.spend(None, OwnerSpend, stray_ref(), tx)
+}
+
+test a_datumless_send_is_swept_by_its_stake_key() {
+  sweeps(
+    stray_tx(
+      owner_staked(),
+      assets.from_lovelace(50_000_000),
+      NoDatum,
+      [owner_key],
+    ),
+  )
+}
+
+test a_send_with_a_foreign_datum_is_swept_by_its_stake_key() {
+  let foreign: Data = 42
+  sweeps(
+    stray_tx(
+      owner_staked(),
+      assets.from_lovelace(50_000_000),
+      InlineDatum(foreign),
+      [owner_key],
+    ),
+  )
+}
+
+test a_datumless_send_is_swept_by_any_redeemer() {
+  guard_validator.guard.spend(
+    None,
+    AgentSpend,
+    stray_ref(),
+    stray_tx(
+      owner_staked(),
+      assets.from_lovelace(50_000_000),
+      NoDatum,
+      [owner_key],
+    ),
+  )
+}
+
+test a_datumless_send_needs_its_stake_key_signature() fail {
+  sweeps(
+    stray_tx(
+      owner_staked(),
+      assets.from_lovelace(50_000_000),
+      NoDatum,
+      [attacker_key],
+    ),
+  )
+}
+
+test a_datumless_send_without_a_stake_credential_stays_locked() fail {
+  sweeps(
+    stray_tx(
+      guard_address(),
+      assets.from_lovelace(50_000_000),
+      NoDatum,
+      [owner_key],
+    ),
+  )
+}
+
+test a_datumless_send_under_a_script_stake_credential_stays_locked() fail {
+  let script_staked = address.Address {
+    ..guard_address(),
+    stake_credential: Some(address.Inline(address.Script(owner_key))),
+  }
+  sweeps(
+    stray_tx(
+      script_staked,
+      assets.from_lovelace(50_000_000),
+      NoDatum,
+      [owner_key],
+    ),
+  )
+}
+
+test a_state_token_without_a_guard_datum_stays_on_the_guard_rules() fail {
+  sweeps(stray_tx(owner_staked(), stt_value(50_000_000), NoDatum, [owner_key]))
+}
+
+test a_send_under_a_datum_hash_is_swept_by_its_stake_key() {
+  sweeps(
+    stray_tx(
+      owner_staked(),
+      assets.from_lovelace(50_000_000),
+      DatumHash(
+        #"5555555555555555555555555555555555555555555555555555555555555555",
+      ),
+      [owner_key],
+    ),
+  )
 }
