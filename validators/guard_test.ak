@@ -33,8 +33,9 @@ const und_pol: ByteArray =
 
 const und_name: ByteArray = "UND"
 
+/// The guard is its own state-token policy.
 const guard_script: ByteArray =
-  #"00000000000000000000000000000000000000000000000000000fff"
+  #"00000000000000000000000000000000000000000000000000000abc"
 
 const own_tx_id: ByteArray =
   #"1111111111111111111111111111111111111111111111111111111111111111"
@@ -179,6 +180,7 @@ test owner_sweep_with_sig() {
   let tx = Transaction {
     ..transaction.placeholder,
     inputs: [ginput(v_tok(100_000_000, 500), base_datum())],
+    mint: assets.from_asset(stt_policy, stt_name, -1),
     extra_signatories: [owner_key],
   }
   logic.spend_ok(base_datum(), OwnerSpend, own_ref(), tx)

@@ -1,11 +1,11 @@
-//// Opening-datum audit, 2026-11-17. The state-token policy now checks the guard
-//// it opens: each `fail` test is a mint the policy must refuse, the plain tests
-//// are the honest openings and burns that must keep passing. The agent branch
-//// refuses the same out-of-bounds terms after an owner retune, and the owner
-//// exits at the bounds and outside them.
+//// Opening-datum audit, 2026-11-17. The guard is its own state-token policy, so
+//// `stt_policy` below is both the policy id and the guard script hash. Each
+//// `fail` test is a mint or spend that must be refused, the plain tests are the
+//// honest openings, retunes, exits and burns that must keep passing.
 
 use aiken/builtin
 use aiken/cbor
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto.{blake2b_256}
 use aiken/interval
@@ -18,7 +18,6 @@ use guard as guard_validator
 use guard/types.{
   AgentSpend, AssetCap, GuardDatum, GuardRedeemer, OwnerSpend, SpendRecord,
 }
-use state_token
 
 const owner_key: ByteArray =
   #"0000000000000000000000000000000000000000000000000000000a"
@@ -66,7 +65,7 @@ fn genesis() -> Input {
 }
 
 fn guard_address() -> address.Address {
-  address.from_script(state_token.guard_script_hash)
+  address.from_script(stt_policy)
 }
 
 /// A 28-byte policy id distinct for each `i` in 1..255.
@@ -142,7 +141,7 @@ fn mint_tx(outputs: List<Output>) -> Transaction {
 
 fn mints(tx: Transaction) -> Bool {
   let redeemer: Data = Void
-  state_token.state_token.mint(redeemer, stt_policy, tx)
+  guard_validator.guard.mint(redeemer, stt_policy, tx)
 }
 
 fn opens(d: GuardDatum) -> Bool {
@@ -203,7 +202,7 @@ test opening_with_twenty_assets_mints() {
 
 test burning_needs_nothing_but_the_burn() {
   let redeemer: Data = Void
-  state_token.state_token.mint(
+  guard_validator.guard.mint(
     redeemer,
     stt_policy,
     Transaction {
@@ -544,6 +543,7 @@ test agent_spends_at_the_record_and_token_cap_bounds() {
 
 // ── Owner exit ──────────────────────────────────────────────────────────────
 
+/// Everything goes to the owner and the state token is burned.
 fn owner_exit_tx(d: GuardDatum) -> Transaction {
   Transaction {
     ..transaction.placeholder,
@@ -551,11 +551,12 @@ fn owner_exit_tx(d: GuardDatum) -> Transaction {
     outputs: [
       Output {
         address: address.from_verification_key(owner_key),
-        value: stt_value(100_000_000),
+        value: assets.from_lovelace(100_000_000),
         datum: NoDatum,
         reference_script: None,
       },
     ],
+    mint: assets.from_asset(stt_policy, stt_name(), -1),
     extra_signatories: [owner_key],
     validity_range: interval.between(hi - 60_000, hi),
   }
@@ -584,4 +585,369 @@ test owner_exits_a_guard_retuned_out_of_bounds() {
     kill: True,
   }
   handler_ok(d, OwnerSpend, owner_exit_tx(d))
+}
+
+// ── Owner spends that keep the state token ──────────────────────────────────
+//
+// Red-team 2026-11-17: an attacker opens a guard they own, then owner-spends it
+// into a copy of the victim's guard (owner = victim, agent = attacker) at the
+// victim's stake address. The copy carries a genuine state token, so it passed
+// client attestation, and the attacker's agent key drained any top-up.
+
+const attacker_key: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000d"
+
+const attacker_agent: ByteArray =
+  #"0000000000000000000000000000000000000000000000000000000e"
+
+const victim_stake: ByteArray =
+  #"000000000000000000000000000000000000000000000000000005a5"
+
+fn victim_address() -> address.Address {
+  guard_address() |> address.with_delegation_key(victim_stake)
+}
+
+fn guard_input_at(addr: address.Address, v: Value, d: GuardDatum) -> Input {
+  let inp = guard_input(v, d)
+  Input { ..inp, output: Output { ..inp.output, address: addr } }
+}
+
+fn guard_output_at(addr: address.Address, v: Value, d: GuardDatum) -> Output {
+  Output { ..continuation(v, d), address: addr }
+}
+
+fn owner_tx(
+  inp: Input,
+  outs: List<Output>,
+  signers: List<ByteArray>,
+) -> Transaction {
+  Transaction {
+    ..transaction.placeholder,
+    inputs: [inp],
+    outputs: outs,
+    extra_signatories: signers,
+    validity_range: interval.between(hi - 60_000, hi),
+  }
+}
+
+/// The owner of `from` moves its guard, value unchanged, into `out`.
+fn owner_moves(from: GuardDatum, out: Output, signers: List<ByteArray>) -> Bool {
+  handler_ok(
+    from,
+    OwnerSpend,
+    owner_tx(guard_input(stt_value(6_000_000), from), [out], signers),
+  )
+}
+
+fn owner_retunes(from: GuardDatum, to: GuardDatum) -> Bool {
+  owner_moves(from, continuation(stt_value(6_000_000), to), [from.owner])
+}
+
+/// The victim's real terms, as consented.
+fn victim_terms() -> GuardDatum {
+  opening()
+}
+
+fn attacker_opening() -> GuardDatum {
+  GuardDatum { ..victim_terms(), owner: attacker_key }
+}
+
+fn look_alike() -> GuardDatum {
+  GuardDatum { ..victim_terms(), agent: attacker_agent }
+}
+
+fn greedy_look_alike() -> GuardDatum {
+  GuardDatum {
+    ..look_alike(),
+    per_tx_cap: 1_000_000_000_000,
+    daily_cap: 1_000_000_000_000,
+    min_principal: 0,
+  }
+}
+
+/// The attacker turns their own guard into `d` at the victim's stake address.
+fn plant(d: GuardDatum) -> Bool {
+  owner_moves(
+    attacker_opening(),
+    guard_output_at(victim_address(), stt_value(6_000_000), d),
+    [attacker_key],
+  )
+}
+
+/// The attestation clients ran before the fix: pinned script and policy, the
+/// one-shot name, owner and token caps.
+fn attests(out: Output, me: ByteArray, consented: List<AssetCap>) -> Bool {
+  expect InlineDatum(raw) = out.datum
+  expect d: GuardDatum = raw
+  and {
+    out.address.payment_credential == guard_address().payment_credential,
+    dict.to_pairs(assets.tokens(out.value, stt_policy)) == [Pair(stt_name(), 1)],
+    d.owner == me,
+    d.token_caps == consented,
+    d.stt_policy == stt_policy,
+  }
+}
+
+/// The victim tops the plant up, then the plant's agent key moves `drain` out.
+fn deposit_and_drain(d: GuardDatum, deposit: Int, drain: Int) -> Bool {
+  let small = stt_value(6_000_000)
+  let funded = stt_value(6_000_000 + deposit)
+  let deposit_ok = handler_ok(
+    d,
+    OwnerSpend,
+    owner_tx(
+      guard_input_at(victim_address(), small, d),
+      [guard_output_at(victim_address(), funded, d)],
+      [owner_key],
+    ),
+  )
+  let after = GuardDatum { ..d, spends: [ada_rec(hi, drain)] }
+  let loot = Output {
+    address: address.from_verification_key(attacker_key),
+    value: assets.from_lovelace(drain),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let drain_ok = handler_ok(
+    d,
+    AgentSpend,
+    owner_tx(
+      guard_input_at(victim_address(), funded, d),
+      [
+        guard_output_at(
+          victim_address(),
+          stt_value(6_000_000 + deposit - drain),
+          after,
+        ),
+        loot,
+      ],
+      [attacker_agent],
+    ),
+  )
+  deposit_ok && drain_ok
+}
+
+test attacker_cannot_plant_a_victim_owned_look_alike() fail {
+  plant(look_alike())
+}
+
+test a_look_alike_never_reaches_client_attestation() fail {
+  plant(look_alike()) && attests(
+    guard_output_at(victim_address(), stt_value(6_000_000), look_alike()),
+    owner_key,
+    victim_terms().token_caps,
+  )
+}
+
+test a_look_alike_cannot_drain_a_deposit_within_copied_caps() fail {
+  plant(look_alike()) && deposit_and_drain(
+    look_alike(),
+    100_000_000,
+    20_000_000,
+  )
+}
+
+test a_greedy_look_alike_cannot_drain_a_whole_deposit() fail {
+  plant(greedy_look_alike()) && deposit_and_drain(
+    greedy_look_alike(),
+    1_000_000_000,
+    1_004_000_000,
+  )
+}
+
+test attacker_opens_a_guard_of_their_own() {
+  mints(
+    Transaction {
+      ..mint_tx([guard_output(attacker_opening())]),
+      extra_signatories: [attacker_key],
+    },
+  )
+}
+
+test a_retune_without_the_owner_signature_is_refused() fail {
+  owner_moves(
+    attacker_opening(),
+    continuation(stt_value(6_000_000), attacker_opening()),
+    [attacker_agent],
+  )
+}
+
+test a_drain_over_the_copied_cap_is_refused() fail {
+  deposit_and_drain(look_alike(), 100_000_000, 20_000_001)
+}
+
+test a_fake_policy_plant_fails_attestation() {
+  let fake = Output {
+    ..guard_output_at(victim_address(), stt_value(6_000_000), look_alike()),
+    value: assets.from_lovelace(6_000_000)
+      |> assets.add(other_policy, stt_name(), 1),
+  }
+  !attests(fake, owner_key, victim_terms().token_caps)
+}
+
+test owner_cannot_take_the_state_token_to_a_wallet() fail {
+  owner_moves(
+    victim_terms(),
+    Output {
+      address: address.from_verification_key(owner_key),
+      value: stt_value(6_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    },
+    [owner_key],
+  )
+}
+
+test owner_continuation_must_stay_at_the_guard_script() fail {
+  owner_moves(
+    victim_terms(),
+    Output {
+      ..continuation(stt_value(6_000_000), victim_terms()),
+      address: address.from_script(other_script),
+    },
+    [owner_key],
+  )
+}
+
+test owner_continuation_must_keep_its_terms_in_bounds() fail {
+  owner_retunes(victim_terms(), GuardDatum { ..victim_terms(), window_len: 1 })
+}
+
+test owner_continuation_must_name_this_policy() fail {
+  owner_retunes(
+    victim_terms(),
+    GuardDatum { ..victim_terms(), stt_policy: other_policy },
+  )
+}
+
+test owner_continuation_must_carry_its_spend_records_forward() fail {
+  let used = GuardDatum {
+    ..victim_terms(),
+    spends: [ada_rec(hi - 1_000, 50_000_000)],
+  }
+  owner_retunes(used, GuardDatum { ..used, spends: [] })
+}
+
+test owner_continuation_cannot_carry_a_reference_script() fail {
+  owner_moves(
+    victim_terms(),
+    Output {
+      ..continuation(stt_value(6_000_000), victim_terms()),
+      reference_script: Some(other_script),
+    },
+    [owner_key],
+  )
+}
+
+test a_handover_needs_the_new_owner_signature() fail {
+  owner_retunes(
+    victim_terms(),
+    GuardDatum { ..victim_terms(), owner: attacker_key },
+  )
+}
+
+test owner_retunes_caps_agent_and_expiry_within_bounds() {
+  let used = GuardDatum {
+    ..victim_terms(),
+    spends: [ada_rec(hi - 1_000, 5_000_000)],
+  }
+  owner_retunes(
+    used,
+    GuardDatum {
+      ..used,
+      agent: attacker_agent,
+      per_tx_cap: 10_000_000,
+      daily_cap: 30_000_000,
+      window_len: 3_600_000,
+      token_caps: caps(10),
+      max_spends: 50,
+      expiry: 3_000_000_000_000,
+    },
+  )
+}
+
+test owner_kills_the_guard() {
+  owner_retunes(victim_terms(), GuardDatum { ..victim_terms(), kill: True })
+}
+
+test owner_tops_up_the_guard() {
+  owner_moves(
+    victim_terms(),
+    continuation(stt_value(106_000_000), victim_terms()),
+    [owner_key],
+  )
+}
+
+test owner_moves_the_guard_to_another_stake_credential() {
+  owner_moves(
+    victim_terms(),
+    guard_output_at(victim_address(), stt_value(6_000_000), victim_terms()),
+    [owner_key],
+  )
+}
+
+test a_handover_signed_by_both_owners_passes() {
+  owner_moves(
+    victim_terms(),
+    continuation(
+      stt_value(6_000_000),
+      GuardDatum { ..victim_terms(), owner: attacker_key },
+    ),
+    [owner_key, attacker_key],
+  )
+}
+
+/// Funds at the guard address without a state token are not a guard: the key
+/// in the datum's owner field sweeps them whatever the rest holds.
+test owner_sweeps_a_utxo_without_a_state_token() {
+  let d = GuardDatum { ..victim_terms(), window_len: -1, kill: True }
+  handler_ok(
+    d,
+    OwnerSpend,
+    owner_tx(
+      guard_input(assets.from_lovelace(6_000_000), d),
+      [
+        Output {
+          address: address.from_verification_key(owner_key),
+          value: assets.from_lovelace(6_000_000),
+          datum: NoDatum,
+          reference_script: None,
+        },
+      ],
+      [owner_key],
+    ),
+  )
+}
+
+test an_exit_without_the_owner_signature_is_refused() fail {
+  let d = victim_terms()
+  handler_ok(
+    d,
+    OwnerSpend,
+    Transaction { ..owner_exit_tx(d), extra_signatories: [attacker_key] },
+  )
+}
+
+test a_sweep_without_the_owner_signature_is_refused() fail {
+  let d = victim_terms()
+  handler_ok(
+    d,
+    OwnerSpend,
+    owner_tx(
+      guard_input(assets.from_lovelace(6_000_000), d),
+      [],
+      [attacker_key],
+    ),
+  )
+}
+
+test minting_a_name_no_input_hashes_to_is_refused() fail {
+  let other = Input {
+    ..genesis(),
+    output_reference: OutputReference {
+      transaction_id: genesis_tx_id,
+      output_index: 4,
+    },
+  }
+  mints(Transaction { ..mint_tx([guard_output(opening())]), inputs: [other] })
 }

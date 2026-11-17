@@ -33,8 +33,9 @@ const agent_key: ByteArray =
 const attacker_key: ByteArray =
   #"0000000000000000000000000000000000000000000000000000000c"
 
+/// The guard is its own state-token policy.
 const guard_script: ByteArray =
-  #"00000000000000000000000000000000000000000000000000000fff"
+  #"00000000000000000000000000000000000000000000000000000abc"
 
 const stt_policy: ByteArray =
   #"00000000000000000000000000000000000000000000000000000abc"
@@ -171,6 +172,8 @@ test honest_exact_per_tx_cap() {
 test owner_unrestricted_passes() {
   let tx = Transaction {
     ..transaction.placeholder,
+    inputs: [guard_input(base_datum(), 100_000_000)],
+    mint: assets.from_asset(stt_policy, stt_name, -1),
     extra_signatories: [owner_key],
   }
   logic.spend_ok(base_datum(), OwnerSpend, own_ref(), tx)

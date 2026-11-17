@@ -3,12 +3,21 @@
 //// each owner-declared token is metered the SAME way against its own quantity
 //// caps; any undeclared token may be acquired but never leave the guard on the
 //// agent branch. No oracle — bounds are owner-set quantities.
+////
+//// The guard validator is also its own state-token policy, so the policy id is
+//// the guard's script hash. A state token only ever sits in an output that
+//// `guard_output` admits: the mint opens one, an owner spend either burns the
+//// token or continues the guard under the same rules, and the agent branch keeps
+//// the datum.
 
+use aiken/cbor
 use aiken/collection/dict
 use aiken/collection/list
+use aiken/crypto.{blake2b_256}
 use aiken/interval.{Finite}
-use cardano/assets.{Value, lovelace_of, quantity_of}
-use cardano/transaction.{InlineDatum, OutputReference, Transaction}
+use cardano/address.{Script}
+use cardano/assets.{AssetName, PolicyId, Value, lovelace_of, quantity_of}
+use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use guard/types.{
   AgentSpend, AssetCap, GuardDatum, GuardRedeemer, OwnerSpend, SpendRecord,
 }
@@ -36,28 +45,99 @@ pub fn spend_ok(
   own_ref: OutputReference,
   tx: Transaction,
 ) -> Bool {
-  when redeemer is {
-    OwnerSpend -> list.has(tx.extra_signatories, datum.owner)
-    AgentSpend -> agent_spend_ok(datum, own_ref, tx)
-  }
-}
-
-fn agent_spend_ok(
-  datum: GuardDatum,
-  own_ref: OutputReference,
-  tx: Transaction,
-) -> Bool {
-  let agent_signed = list.has(tx.extra_signatories, datum.agent)
-  let not_killed = !datum.kill
-
   expect Some(own_input) = list.find(
     tx.inputs,
     fn(i) { i.output_reference == own_ref },
   )
-  let guard_address = own_input.output.address
+  expect Script(policy) = own_input.output.address.payment_credential
+  when redeemer is {
+    OwnerSpend -> owner_spend_ok(datum, own_input.output, policy, tx)
+    AgentSpend -> agent_spend_ok(datum, own_input.output, policy, tx)
+  }
+}
 
-  expect [Pair(stt_nm, 1)] = own_input.output.value
-    |> assets.tokens(datum.stt_policy)
+/// The owner signs. Every state token on the spent output is either burned or
+/// continued into a guard `guard_output` admits, with the spend records carried
+/// forward. Nothing else in the datum is read, so an output without a state
+/// token is the owner's to sweep whatever the rest of its datum holds.
+fn owner_spend_ok(
+  datum: GuardDatum,
+  own_output: Output,
+  policy: PolicyId,
+  tx: Transaction,
+) -> Bool {
+  list.has(tx.extra_signatories, datum.owner) && list.all(
+    dict.keys(assets.tokens(own_output.value, policy)),
+    fn(name) {
+      quantity_of(tx.mint, policy, name) < 0 || guard_output(policy, name, tx).spends == datum.spends
+    },
+  )
+}
+
+/// Mint opens a guard: the name is one-shot and the token lands in a guard with
+/// no spend records that is not killed. Burn checks nothing else, so closing a
+/// guard never depends on its state.
+pub fn mint_ok(policy: PolicyId, tx: Transaction) -> Bool {
+  expect [Pair(name, amount)] = tx.mint
+    |> assets.tokens(policy)
+    |> dict.to_pairs()
+  when amount is {
+    1 -> and {
+        list.any(
+          tx.inputs,
+          fn(i) { blake2b_256(cbor.serialise(i.output_reference)) == name },
+        ),
+        {
+          let opened = guard_output(policy, name, tx)
+          opened.spends == [] && !opened.kill
+        },
+      }
+    -1 -> True
+    _ -> False
+  }
+}
+
+/// The one output carrying state token `name`, required to be a guard: at the
+/// guard script (any stake credential), no reference script, this token alone
+/// under the policy, at most `max_assets` non-ADA assets, at least
+/// `min_principal` lovelace, an inline datum naming this policy on admissible
+/// terms, and signed by that datum's owner. Returns the datum.
+fn guard_output(
+  policy: PolicyId,
+  name: AssetName,
+  tx: Transaction,
+) -> GuardDatum {
+  expect [out] = list.filter(
+    tx.outputs,
+    fn(o) { quantity_of(o.value, policy, name) > 0 },
+  )
+  expect InlineDatum(raw) = out.datum
+  expect datum: GuardDatum = raw
+  expect and {
+      out.address.payment_credential == Script(policy),
+      out.reference_script == None,
+      dict.to_pairs(assets.tokens(out.value, policy)) == [Pair(name, 1)],
+      list.length(assets.flatten(assets.without_lovelace(out.value))) <= max_assets,
+      lovelace_of(out.value) >= datum.min_principal,
+      datum.stt_policy == policy,
+      terms_ok(datum),
+      list.has(tx.extra_signatories, datum.owner),
+    }
+  datum
+}
+
+fn agent_spend_ok(
+  datum: GuardDatum,
+  own_output: Output,
+  policy: PolicyId,
+  tx: Transaction,
+) -> Bool {
+  let agent_signed = list.has(tx.extra_signatories, datum.agent)
+  let not_killed = !datum.kill
+  let guard_address = own_output.address
+
+  expect [Pair(stt_nm, 1)] = own_output.value
+    |> assets.tokens(policy)
     |> dict.to_pairs()
 
   let guard_inputs = list.filter(
@@ -65,21 +145,21 @@ fn agent_spend_ok(
     fn(i) { i.output.address == guard_address },
   )
   expect [guard_in] = guard_inputs
-  expect quantity_of(guard_in.output.value, datum.stt_policy, stt_nm) == 1
+  expect quantity_of(guard_in.output.value, policy, stt_nm) == 1
 
   let stt_outputs = list.filter(
     tx.outputs,
-    fn(o) { quantity_of(o.value, datum.stt_policy, stt_nm) == 1 },
+    fn(o) { quantity_of(o.value, policy, stt_nm) == 1 },
   )
   expect [cont] = stt_outputs
   let cont_to_guard = cont.address == guard_address
-  let stt_singleton = dict.to_pairs(assets.tokens(cont.value, datum.stt_policy)) == [
+  let stt_singleton = dict.to_pairs(assets.tokens(cont.value, policy)) == [
     Pair(stt_nm, 1),
   ]
   let no_ref_script = cont.reference_script == None
 
-  // The owner may retune the datum without any check, so the agent branch holds
-  // it to the same terms the state-token policy admits at opening.
+  // Every output that receives the state token already meets these terms; the
+  // agent branch re-checks them so a negative record or short window never runs.
   let state_ok = terms_ok(datum) && list.all(
     datum.spends,
     fn(r) { r.amount > 0 },
@@ -126,7 +206,7 @@ fn agent_spend_ok(
   let undeclared_conserved = conserve_undeclared(
     guard_in.output.value,
     cont.value,
-    datum.stt_policy,
+    policy,
     datum.token_caps,
   )
 
@@ -139,7 +219,7 @@ fn agent_spend_ok(
   expect cont_datum: GuardDatum = cont_datum_data
   let datum_ok = cont_datum == expected_datum
 
-  let no_stt_mint = quantity_of(tx.mint, datum.stt_policy, stt_nm) == 0
+  let no_stt_mint = quantity_of(tx.mint, policy, stt_nm) == 0
 
   and {
     agent_signed,
@@ -162,8 +242,8 @@ fn agent_spend_ok(
   }
 }
 
-/// The caps, window and bounds a guard may run under: checked by the
-/// state-token policy when a guard opens and by the agent branch on every spend.
+/// The caps, window and bounds a guard may run under: checked whenever a state
+/// token lands in a guard output and by the agent branch on every spend.
 pub fn terms_ok(datum: GuardDatum) -> Bool {
   and {
     datum.window_len >= min_window_len,

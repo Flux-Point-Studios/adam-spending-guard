@@ -1,9 +1,8 @@
 # Guard v2 — per-asset quantity caps (autonomous sell)
 
-> **STATUS: current pins guard scriptHash `8daa9ed8...`, STT policyId
-> `73b53d7c...`; 112 aiken tests green. The per-asset model below is unchanged;
-> the opening rules the STT mint enforces are in CONFORMANCE.md ("Opening a
-> guard"). RED-TEAM-REPORT.md covers the earlier `ecb3ce03...` build.**
+> **STATUS: current pin guard scriptHash = STT policyId `d7f32b57...`; 136 aiken
+> tests green. The per-asset model below is unchanged; the STT lifetime rules are
+> in CONFORMANCE.md. RED-TEAM-REPORT.md covers the earlier `ecb3ce03...` build.**
 
 Repo `adam-spending-guard`, branch `v2-per-asset-caps` (this worktree). Apache-2.0.
 Public audit repo for **fable** (external integrator building the Gero iOS wallet
@@ -27,16 +26,15 @@ undeclared tokens, the STT, or the ADA floor (`min_principal`).
   pins the script by hashing the committed compiled code.
 - **Toolchain:** Aiken v1.1.23+8949565, stdlib v3.1.0.
 - **Final hashes** (reproducible via `aiken build`, present in `plutus.json`):
-  - guard scriptHash = `8daa9ed8f913173d6e9360a5783bc9f9bdc7399526ff174b340ef3ff`
-  - STT (`state_token`) policyId = `73b53d7c459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082`
+  - guard scriptHash = STT policyId = `d7f32b57ac6365683fe35f43f60e2e21dd4626a5518614f96ba513ac`
 
 ## Model
 
 Funds sit at the guard script address, authenticated by a one-shot **STT NFT
 singleton**. Two redeemers (`lib/guard/types.ak`):
 
-- **`OwnerSpend`** — only requires the owner signature
-  (`list.has(tx.extra_signatories, datum.owner)`); unrestricted retune / sweep.
+- **`OwnerSpend`** — only requires the owner signature; withdraws by burning the
+  STT, or continues the guard under the STT lifetime rules (CONFORMANCE.md).
 - **`AgentSpend`** — bounded session key; all the per-asset metering below.
 
 `owner` and `stt_policy` live **in the datum** (not as script params) so a client
@@ -105,7 +103,7 @@ new_spends   = ada_records ++ token_records ++ active     // list.concat(concat(
 
 Structural invariants the tx-builder must honor:
 
-- **Exactly one guard-address input** — the validator does `expect [guard_in]`
+- **Exactly one input at the guard's full address** — the validator does `expect [guard_in]`
   after filtering inputs by `guard_address`. The tx-builder must **NEVER** add a
   2nd input at the universal guard address (fail-closed liveness caveat).
 - **Exactly one STT-bearing continuation** to the guard address (`cont_to_guard`),
@@ -120,9 +118,9 @@ Structural invariants the tx-builder must honor:
 What fable / AdamKit computes to trust a guard — **no `apply_params`, hash-only**:
 
 1. **Guard scriptHash** — from the compiled per-asset `plutus.json` (hash the
-   committed compiled code); pin `8daa9ed8...`.
-2. **STT policyId** — from `state_token` in `plutus.json` the same way (hash-only);
-   pin `73b53d7c...`.
+   committed compiled code); pin `d7f32b57...`.
+2. **STT unit** — policy = the guard hash; locate the guard by the exact unit the
+   user minted.
 3. **STT token name** — recompute via the CBOR rule
    `blake2b_256(cbor.serialise(genesis OutputReference))` and confirm it is the
    name on the guard's STT. Reproducing `cbor.serialise(OutputReference)`
@@ -134,8 +132,8 @@ What fable / AdamKit computes to trust a guard — **no `apply_params`, hash-onl
 
 > **NOTE — what is unchanged vs NEW from fable's PR #1.** The STT **name rule**
 > (`blake2b_256(cbor.serialise(out_ref))`, CONFORMANCE.md vectors) is unchanged.
-> The STT **policyId** is new (`73b53d7c...`): the policy now checks the guard it
-> opens and embeds the guard script hash. What is **NEW** is the **datum CBOR**: `GuardDatum` now has **12
+> The STT **policyId** is new: it is the guard script hash (`d7f32b57...`), since
+> the guard validator mints the token itself. What is **NEW** is the **datum CBOR**: `GuardDatum` now has **12
 > fields** (adds `stt_policy`, `token_caps`, and unifies `spends` across ADA +
 > tokens). A pr1 datum decoder will NOT decode a per-asset datum — clients MUST
 > re-pin against the new `datum_cbor` vector
@@ -169,9 +167,9 @@ From fable's red-team of the earlier lovelace-only v2-pinnable guard:
 - **F-2 (HIGH) negative-ADA-outflow drain** — the same token drain hidden by a
   negative ADA outflow so no spend record was written. **CLOSED** (same tests).
 - **F-3 (LOW)** — `no_stt_mint` pins only the guard's OWN STT name, so the
-  universal STT policy's singleton invariant relies on the SEPARATE `state_token`
-  minting policy. **Carried forward** as an explicit threat-model note (by design:
-  `state_token` is a distinct, audited one-shot policy).
+  universal STT policy's singleton invariant relies on the policy's own mint
+  rules. **Carried forward** as an explicit threat-model note: the policy is the
+  guard validator's own one-shot `mint` handler.
 - **Shared-address singleton double-satisfaction** was fable's *"Not a finding"* —
   the defense holds (`expect [guard_in]`), regressioned in
   `guard_redteam_test.ak` (`rt_two_guard_inputs_rejected`,
@@ -213,7 +211,7 @@ The validator is frozen. What remains is entirely off-chain, in the ADAM app rep
 - **agent-core tx-builder** — compute the canonical `spends` reconstruction above;
   never add a 2nd input at the universal guard address.
 - **AdamKit** — implement the 4-part hash-only per-asset attestation (pin
-  `8daa9ed8...` + `73b53d7c...`, recompute the STT name per CONFORMANCE.md, decode
+  `d7f32b57...`, recompute the STT name per CONFORMANCE.md, decode
   the 12-field `GuardDatum`, verify owner + `token_caps == consent`).
 
 None of these can change the frozen hashes; they consume them.

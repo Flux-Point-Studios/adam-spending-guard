@@ -1,6 +1,6 @@
 //// STT-name conformance vectors for the ADAM guard v2 (Plutus V3).
 ////
-//// The universal STT (state_token.ak) is a one-shot whose NAME binds it to a
+//// The universal STT (minted by guard.ak) is a one-shot whose NAME binds it to a
 //// single genesis UTxO:  name = blake2b_256(cbor.serialise(genesis_out_ref)).
 //// An off-chain client (the Gero iOS wallet) must reproduce that name BYTE-FOR-
 //// BYTE to attest a guard hash-only. The exact CBOR that `cbor.serialise` emits

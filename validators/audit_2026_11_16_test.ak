@@ -31,8 +31,9 @@ const tok_pol: ByteArray =
 
 const tok_name: ByteArray = "TKN"
 
+/// The guard is its own state-token policy.
 const guard_script: ByteArray =
-  #"00000000000000000000000000000000000000000000000000000fff"
+  #"00000000000000000000000000000000000000000000000000000abc"
 
 const own_tx_id: ByteArray =
   #"1111111111111111111111111111111111111111111111111111111111111111"
@@ -229,7 +230,8 @@ test honest_spend_with_valid_history_passes() {
   )
 }
 
-/// The owner keeps full control of a guard whatever its datum holds.
+/// The owner keeps full control of a guard whatever its datum holds: the sweep
+/// burns the state token.
 test owner_can_sweep_a_poisoned_guard() {
   let start = GuardDatum {
     ..base_datum(),
@@ -239,6 +241,7 @@ test owner_can_sweep_a_poisoned_guard() {
   let tx = Transaction {
     ..transaction.placeholder,
     inputs: [guard_in(v_base(100_000_000), start)],
+    mint: assets.from_asset(stt_policy, stt_name, -1),
     extra_signatories: [owner_key],
   }
   logic.spend_ok(start, OwnerSpend, own_ref(), tx)
