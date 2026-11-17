@@ -21,7 +21,11 @@ the owner-substitution case (INFO-1) isn't client-verifiable.
 2. **STT policy is UNIVERSAL** (`validators/state_token.ak`) → pinnable policy
    id. Uniqueness moves from a script param to the token **name**:
    `name = blake2b_256(cbor.serialise(genesis OutputReference))`, minted only if
-   that genesis UTxO is consumed (one-shot; +1 only; burn −1 only).
+   that genesis UTxO is consumed (one-shot; +1 only; burn −1 only). The policy
+   embeds the guard script hash (the guard does not reference the policy, so
+   there is no hash cycle) and mints only into a guard opened on admissible
+   terms, signed by `datum.owner` (rules in `CONFORMANCE.md`, "Opening a
+   guard"). The burn checks nothing else.
 3. **`owner` and `stt_policy` move INTO the datum** (`lib/guard/types.ak`). The
    agent branch keeps them immutable (datum-invariance). The STT name is read
    dynamically from the spent input.
@@ -35,6 +39,15 @@ the owner-substitution case (INFO-1) isn't client-verifiable.
 - `datum.stt_policy == pinned STT policy`
 - caps (`per_tx_cap` / `daily_cap` / `min_principal` / `expiry`) == what the user
   consented to
+- the deposit lists `datum.owner` as a required signer: the policy refuses the
+  mint otherwise, and also refuses an opening datum outside the bounds the
+  ledger enforces for every guard (window one hour to thirty days,
+  `0 < per_tx_cap <= daily_cap`, `min_principal >= 0` and held,
+  `1 <= max_spends <= 50`, at most 10 `token_caps` with `0 < per_tx <= daily`,
+  empty `spends`, `kill = False`)
+
+Pinned hashes: guard `8daa9ed8f913173d6e9360a5783bc9f9bdc7399526ff174b340ef3ff`,
+STT policy `73b53d7c459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082`.
 
 Everything the "can't exceed your caps / you can always withdraw" promise rests
 on is now client-verifiable.

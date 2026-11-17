@@ -155,7 +155,7 @@ record `300`, both stamped `at=1_000_000_060_000`), `min_principal=5_000_000`,
 ```
 d8799f                                     GuardDatum = Constr 0, [
   581c 00…000a0a                             owner        (28-byte VKH)
-  581c 5c48f601…c7d80704                      stt_policy   (28-byte PolicyId = pinned STT)
+  581c 73b53d7c…40f56082                      stt_policy   (28-byte PolicyId = pinned STT)
   581c 00…000b0b                             agent        (28-byte VKH)
   1a01312d00                                 per_tx_cap   20_000_000
   1a02faf080                                 daily_cap    50_000_000
@@ -192,13 +192,13 @@ ff                                         ]
 Full pinned bytes (`cbor.serialise(sample_datum)`):
 
 ```
-d8799f581c00000000000000000000000000000000000000000000000000000a0a581c5c48f6
-01de2cf0a92d20f351e89704ec85871fafff310cebc7d80704581c000000000000000000000000
-00000000000000000000000000000b0b1a01312d001a02faf0801a05265c009fd8799f581c0000
+d8799f581c00000000000000000000000000000000000000000000000000000a0a581c73b53d7c
+459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082581c00000000000000000000000000
+000000000000000000000000000b0b1a01312d001a02faf0801a05265c009fd8799f581c000000
 0000000000000000000000000000000000000000000000111143544b4e1901f41903e8ffff9fd8
-799f40401b000000e8d4a5fa601a00989680ffd8799f581c0000000000000000000000000000000
-0000000000000000000111143544b4e1b000000e8d4a5fa6019012cffff1a004c4b400a1b000001
-d1a94a2000d87980ff
+799f40401b000000e8d4a5fa601a00989680ffd8799f581c000000000000000000000000000000
+0000000000000000000000111143544b4e1b000000e8d4a5fa6019012cffff1a004c4b400a1b00
+0001d1a94a2000d87980ff
 ```
 
 (One contiguous hex string — line-wrapped here only for display; see the test file for
@@ -214,13 +214,15 @@ bound to *this* user with *this* consented cap set, compute all four:
 
 1. **Pin guard scriptHash** — hash the committed compiled guard code from the
    per-asset `plutus.json` and require it equals
-   `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8`. The guard UTxO must sit
+   `8daa9ed8f913173d6e9360a5783bc9f9bdc7399526ff174b340ef3ff`. The guard UTxO must sit
    at this script address.
 
 2. **Pin STT policyId** — hash the committed compiled `state_token` code from
    `plutus.json` and require it equals
-   `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704`. This is the universal
-   STT policy for *all* guards.
+   `73b53d7c459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082`. This is the universal
+   STT policy for *all* guards. It embeds the guard script hash from step 1 and mints
+   only into a guard that meets the opening rules below, so a token of this policy
+   proves the guard opened on admissible terms, signed by `datum.owner`.
 
 3. **Recompute the STT name** — apply the STT-name rule
    `blake2b_256(cbor.serialise(genesis_out_ref))` for the guard's genesis outref and
@@ -240,6 +242,46 @@ bound to *this* user with *this* consented cap set, compute all four:
 > universal STT policy relies on the **separate, audited `state_token` one-shot minting
 > policy** — not on the guard alone. Step 3 (recompute + require quantity 1) is what
 > ties the guard you are attesting to a genuine one-shot mint.
+
+---
+
+# Opening a guard (deploy tx-builder MUST satisfy)
+
+The `state_token` mint (`+1`) opens a guard, and the policy refuses the mint unless the
+deploy transaction meets every rule below (`opens_guard` in
+`validators/state_token.ak`, the shared `terms_ok` in `lib/guard/logic.ak`). Each rule
+has a refusal test in `validators/audit_2026_11_17_test.ak`.
+
+| Rule | Requirement |
+|---|---|
+| One-shot name | some input's `OutputReference` hashes to the token name (unchanged) |
+| Quantity | exactly one token of the policy minted, quantity `+1` (unchanged) |
+| Destination | exactly one output carries the new token; its payment credential is the guard script hash `8daa9ed8…340ef3ff` (any stake credential, or none) |
+| Datum | an **inline** datum that decodes as a 12-field `GuardDatum` (no datum hash, no missing datum) |
+| `stt_policy` | equals the minting policy id |
+| `spends` | empty list (`80`) |
+| `kill` | `False` (`d87980`) |
+| `window_len` | `3_600_000 <= window_len <= 2_592_000_000` ms (one hour to thirty days) |
+| ADA caps | `0 < per_tx_cap <= daily_cap` |
+| `min_principal` | `>= 0`, and the guard output holds at least `min_principal` lovelace |
+| `max_spends` | `1 <= max_spends <= 50` |
+| `token_caps` | at most 10 entries, each with `0 < per_tx <= daily` |
+| Value | the only token of this policy on the output is the new one (quantity 1); at most 20 distinct non-ADA assets |
+| Reference script | none on the guard output |
+| Owner | `datum.owner` is in the transaction's **required signers** (`extra_signatories`) |
+
+The datum fields keep the order of the "GuardDatum CBOR" section above. `expiry`, `agent`
+and the `token_caps` asset ids are not checked at mint; the wallet's consent check covers
+them.
+
+The **burn** (`-1`) checks nothing beyond the single token and quantity, so closing a
+guard never depends on its datum or outputs.
+
+The **agent branch** applies the same `terms_ok` rules on every spend (window, ADA caps,
+`min_principal`, `max_spends`, `token_caps`). The owner branch checks only the owner's
+signature, so an owner retune may write any datum; a retune that leaves these bounds
+makes the agent branch refuse until the owner retunes back. Builders and wallets should
+apply the opening rules to every retuned datum too.
 
 ---
 

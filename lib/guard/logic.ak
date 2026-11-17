@@ -17,6 +17,19 @@ pub const max_skew: Int = 180_000
 
 pub const max_assets: Int = 20
 
+/// One hour. A shorter window prunes records within minutes of stamping them,
+/// which lets the agent spend the whole daily_cap again and again.
+pub const min_window_len: Int = 3_600_000
+
+/// Thirty days.
+pub const max_window_len: Int = 2_592_000_000
+
+/// Bound max_spends and token_caps so the heaviest agent spend leaves room in
+/// the per-transaction budget for the swap scripts that run beside it.
+pub const max_spend_records: Int = 50
+
+pub const max_token_caps: Int = 10
+
 pub fn spend_ok(
   datum: GuardDatum,
   redeemer: GuardRedeemer,
@@ -65,9 +78,9 @@ fn agent_spend_ok(
   ]
   let no_ref_script = cont.reference_script == None
 
-  // The opening datum is not checked on chain: a non-positive window or record
-  // would void the rolling caps, so the agent branch refuses to run on one.
-  let history_ok = datum.window_len > 0 && list.all(
+  // The owner may retune the datum without any check, so the agent branch holds
+  // it to the same terms the state-token policy admits at opening.
+  let state_ok = terms_ok(datum) && list.all(
     datum.spends,
     fn(r) { r.amount > 0 },
   )
@@ -131,7 +144,7 @@ fn agent_spend_ok(
   and {
     agent_signed,
     not_killed,
-    history_ok,
+    state_ok,
     cont_to_guard,
     stt_singleton,
     no_ref_script,
@@ -146,6 +159,22 @@ fn agent_spend_ok(
     count_ok,
     datum_ok,
     no_stt_mint,
+  }
+}
+
+/// The caps, window and bounds a guard may run under: checked by the
+/// state-token policy when a guard opens and by the agent branch on every spend.
+pub fn terms_ok(datum: GuardDatum) -> Bool {
+  and {
+    datum.window_len >= min_window_len,
+    datum.window_len <= max_window_len,
+    datum.per_tx_cap > 0,
+    datum.per_tx_cap <= datum.daily_cap,
+    datum.min_principal >= 0,
+    datum.max_spends > 0,
+    datum.max_spends <= max_spend_records,
+    list.length(datum.token_caps) <= max_token_caps,
+    list.all(datum.token_caps, fn(c) { c.per_tx > 0 && c.per_tx <= c.daily }),
   }
 }
 

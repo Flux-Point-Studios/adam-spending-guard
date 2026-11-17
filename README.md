@@ -30,7 +30,11 @@ transaction, price/DEX-ratio fairness is unenforceable by design; only owner-set
   UTxO. Uniqueness comes from the token **name**, not a script parameter:
   `name = blake2b_256(cbor.serialise(genesis OutputReference))`. The genesis UTxO can
   be spent once, so each name mints once. Mint is exactly `+1` (one input's outref
-  must hash to the name); burn is `-1`.
+  must hash to the name); burn is `-1`. The mint also opens the guard: the token must
+  land at the guard script on an inline `GuardDatum` with empty `spends`, `kill =
+  False`, bounded terms and its own policy id, in a transaction signed by
+  `datum.owner` (see "Opening rules" below). The burn checks nothing else, so the
+  owner can always close.
 - **Two redeemers.** `OwnerSpend` — passes on the owner signature alone; unrestricted
   retune/sweep/close. `AgentSpend` — the bounded session-key path; all caps enforced.
 - **Datum** (`lib/guard/types.ak`, `GuardDatum`, 12 fields, in CBOR/declared order):
@@ -77,23 +81,28 @@ Reproducible from the committed compiled `plutus.json` via `aiken build`.
 
 | Artifact | Hash |
 |----------|------|
-| Guard `scriptHash` (`validators/guard.ak`) | `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8` |
-| STT `policyId` (`validators/state_token.ak`) | `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704` |
+| Guard `scriptHash` (`validators/guard.ak`) | `8daa9ed8f913173d6e9360a5783bc9f9bdc7399526ff174b340ef3ff` |
+| STT `policyId` (`validators/state_token.ak`) | `73b53d7c459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082` |
 
-Compiler: **Aiken v1.1.23+8949565**, stdlib **v3.1.0**, Plutus **V3** (pinned in
-`aiken.toml` / `aiken.lock`).
+Compiler: `aiken.toml` pins **Aiken v1.1.23** (CI); the committed `plutus.json` was
+built with **v1.1.22+39d6b04**. stdlib **v3.1.0**, Plutus **V3**.
+
+`validators/state_token.ak` embeds the guard script hash (`guard_script_hash`). The
+guard does not reference the policy, so the build has no hash cycle, but any change to
+the guard changes its hash: update the constant to the new `guard.guard.spend` hash and
+run `aiken build` again, or the policy keeps minting only into the old guard.
 
 ## Build & verify
 
 ```sh
 export PATH="$HOME/.aiken/bin:$PATH"
 aiken build      # regenerates plutus.json and the two hashes above
-aiken check      # type-checks and runs all 54 tests
+aiken check      # type-checks and runs all 112 tests
 ```
 
 A reviewer should see: `aiken build` reproduce **exactly** the two FINAL HASHES above
 in `plutus.json` (byte-identical to the committed blueprint), and `aiken check` report
-**54 tests, all passing**, with no warnings from the guard/state_token sources.
+**112 tests, all passing**, with no warnings from the guard/state_token sources.
 
 ## Repo layout
 
@@ -101,10 +110,11 @@ in `plutus.json` (byte-identical to the committed blueprint), and `aiken check` 
 lib/guard/types.ak        GuardDatum (12 fields), AssetCap, SpendRecord, GuardRedeemer
 lib/guard/logic.ak        All spend-decision logic (OwnerSpend + the AgentSpend caps)
 validators/guard.ak       Spending validator entry point (unparameterized)
-validators/state_token.ak One-shot universal STT minting policy (name = blake2b_256 rule)
+validators/state_token.ak One-shot universal STT minting policy (name = blake2b_256 rule);
+                          the mint checks the opening guard output and datum
 ```
 
-Test suite (`validators/*_test.ak`, all green under `aiken check` — 54 tests):
+Test suite (`validators/*_test.ak`, all green under `aiken check` — 112 tests):
 
 | File | Tests | What it covers |
 |------|-------|----------------|
@@ -114,6 +124,33 @@ Test suite (`validators/*_test.ak`, all green under `aiken check` — 54 tests):
 | `security_findings_test.ak` | 3 | fable's F-1 + F-2 exfil reproducers, now REJECTED, plus a declared-token over-cap REJECT |
 | `guard_redteam_test.ak` | 10 | Singleton / STT / window / datum-invariance regressions that must fail-closed |
 | `datum_cbor_conformance_test.ak` | 1 | Pins `cbor.serialise(GuardDatum)` for a concrete 12-field datum |
+| `audit_2026_11_16_test.ak` | 9 | Non-positive window or spend record, second state token or reference script on the continuation REJECT; owner sweeps a poisoned guard |
+| `audit_2026_11_17_test.ak` | 49 | Every opening rule of the state-token mint REJECTS its violation, honest openings and the burn PASS; the agent branch refuses out-of-bounds terms; owner exit and the heaviest agent spend at the bounds |
+
+## Opening rules and budgets
+
+A mint is refused unless exactly one output carries the new token, at the guard script
+(any stake credential), with no reference script, at least `min_principal` lovelace, no
+other token of the policy and at most 20 non-ADA assets, under an inline `GuardDatum`
+with `stt_policy` = the policy, empty `spends`, `kill = False`,
+`3_600_000 <= window_len <= 2_592_000_000`, `0 < per_tx_cap <= daily_cap`,
+`min_principal >= 0`, `1 <= max_spends <= 50`, at most 10 `token_caps` each with
+`0 < per_tx <= daily`, and `datum.owner` among the required signers. The full table is in
+[`CONFORMANCE.md`](./CONFORMANCE.md). The agent branch holds every guard to the same
+window, cap and count bounds, so an out-of-bounds owner retune stops the agent, never
+the owner.
+
+Measured with `aiken tx simulate` on the compiled `plutus.json` (per-tx limit 14,000,000
+mem / 10,000,000,000 cpu):
+
+| Transaction | mem | cpu |
+|---|---|---|
+| Owner exit, any datum (empty, 50 records + 10 caps, 1,700 records, undecodable) | 31,551 | 9,139,636 |
+| Owner close: exit + burn | 56,250 | 16,356,066 |
+| Mint, honest opening | 246,017 | 87,417,232 |
+| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 440,561 | 151,346,302 |
+| Agent spend, 1 declared token, no prior records | 600,490 | 199,871,589 |
+| Agent spend at the bounds (48 live records, 10 caps, 19 tokens + STT held) | 7,997,797 | 2,528,665,728 |
 
 Docs:
 

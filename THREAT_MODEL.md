@@ -15,11 +15,11 @@ are to `lib/guard/logic.ak` and `lib/guard/types.ak` in this repository.
   universal, pinnable script address for *all* guards. No `apply_params`: the
   per-user configuration lives entirely in the datum, so a client can attest a
   guard from hashes alone.
-- **Toolchain:** Aiken v1.1.23+8949565, stdlib v3.1.0. Reproducible via
-  `aiken build`.
+- **Toolchain:** `aiken.toml` pins Aiken v1.1.23; the committed `plutus.json`
+  was built with v1.1.22+39d6b04. stdlib v3.1.0. Reproducible via `aiken build`.
 - **Final hashes (reproducible):**
-  - guard `scriptHash` = `1faf7dfa14fdf5a29b83ed52cc39aa5be69118cfa24c16775f1171f8`
-  - STT (`state_token`) `policyId` = `5c48f601de2cf0a92d20f351e89704ec85871fafff310cebc7d80704`
+  - guard `scriptHash` = `8daa9ed8f913173d6e9360a5783bc9f9bdc7399526ff174b340ef3ff`
+  - STT (`state_token`) `policyId` = `73b53d7c459a7c95b348b469888ea37acc5d12f5bc7ba92340f56082`
 
 ---
 
@@ -94,10 +94,11 @@ Sources in scope:
   path `agent_spend_ok`). The validator entry point calls into this so the
   adversarial suite exercises the exact deployed code.
 - `lib/guard/types.ak` — `GuardDatum`, `AssetCap`, `SpendRecord`, `GuardRedeemer`.
-- The **separate** `state_token` minting policy — the STT one-shot singleton
-  invariant (see §6 and Findings F-3). **The client must also pin/trust this
-  policy**; it is a distinct, audited script, out of scope for the *spending*
-  validator's own guarantees.
+- `validators/state_token.ak` — the **separate** STT minting policy: the one-shot
+  singleton invariant and the opening rules a guard must meet when its token is
+  minted (§6.7, Findings F-3). **The client must also pin/trust this policy.** It
+  embeds the guard script hash; the guard does not reference the policy, so there
+  is no hash cycle.
 
 ---
 
@@ -185,14 +186,17 @@ of any one fails the spend.
 | 15 | Record-count bound | `count_ok = list.length(new_spends) <= datum.max_spends` | 106-107 |
 | 16 | **Datum invariance** — agent may change ONLY `spends` | `datum_ok = cont_datum == GuardDatum { ..datum, spends: new_spends }` | 109-112 |
 | 17 | No STT re-mint on this branch | `no_stt_mint = quantity_of(tx.mint, stt_policy, stt_nm) == 0` | 114 |
-| 18 | Positive window and positive spend records | `history_ok = window_len > 0 && all spends amount > 0` | 70-73 |
+| 18 | Terms within the opening bounds (§6.7) and positive spend records | `state_ok = terms_ok(datum) && all spends amount > 0` | 83-86, 167-179 |
 | 19 | Continuation holds only its own state token under the STT policy | `stt_singleton` | 63-65 |
 | 20 | Continuation carries no reference script | `no_ref_script = cont.reference_script == None` | 66 |
 
-Invariants 18-20 were added after the 2026-11-16 pre-mainnet audit, which changed the guard
-hash. Nothing on chain checks the opening datum, so a guard opened with a non-positive
-`window_len` or a non-positive spend record would have voided the rolling caps (18). An
-agent-key holder could park a second token of the STT policy on the continuation, which
+Invariants 18-20 were added after the 2026-11-16 pre-mainnet audit; invariant 18 took its
+current form, the shared `terms_ok`, after the 2026-11-17 re-audit. The state-token policy
+checks the opening datum (§6.7), but the owner branch lets the owner write any datum on a
+retune, so the agent branch re-checks the same terms on every spend: a window shorter than
+one hour, a non-positive cap, `max_spends` above 50 or more than 10 `token_caps` stops the
+agent, and a non-positive spend record would void the rolling caps (18). An agent-key
+holder could park a second token of the STT policy on the continuation, which
 killed the agent branch for that guard (19), or attach a reference script to it (20).
 Accepted as a design limit: the agent may still acquire up to `max_assets` undeclared
 assets, whose min-ADA stays with them when the owner sweeps.
@@ -324,6 +328,62 @@ not a fund-loss risk).
   STT (`quantity_of(tx.mint, stt_policy, stt_nm) == 0`), so the agent cannot forge
   a second authenticated guard or destroy the singleton.
 
+### 6.7 Opening rules (`state_token` mint, `opens_guard` + `terms_ok`)
+
+A `+1` mint of the STT opens a guard. Besides the one-shot name and quantity, the policy
+requires (each rule has a refusal test in `audit_2026_11_17_test.ak`):
+
+| Rule | Clause | Refusal test(s) |
+|---|---|---|
+| Exactly one output carries the token | `expect [guard_out] = list.filter(outputs, qty > 0)` | `token_carried_by_no_output_is_refused`, `token_carried_by_two_outputs_is_refused` |
+| It sits at the guard script (any stake credential) | `payment_credential == Script(guard_script_hash)` | `token_sent_to_a_key_address_is_refused`, `token_sent_to_another_script_is_refused` |
+| No reference script | `reference_script == None` | `opening_with_a_reference_script_is_refused` |
+| Only its own token of the policy | `tokens(value, policy) == [Pair(name, 1)]` | `opening_with_a_second_state_token_is_refused` |
+| At most `max_assets` (20) non-ADA assets | `length(flatten(without_lovelace)) <= 20` | `opening_with_more_than_twenty_assets_is_refused` |
+| Inline datum decoding as `GuardDatum` | `expect InlineDatum(raw)`, `expect datum: GuardDatum = raw` | `opening_datum_by_hash_is_refused`, `opening_without_a_datum_is_refused`, `opening_datum_that_is_not_a_guard_datum_is_refused` |
+| `stt_policy` is this policy | `datum.stt_policy == policy_id` | `opening_datum_naming_another_policy_is_refused` |
+| `spends` empty | `datum.spends == []` | `opening_with_a_spend_record_is_refused`, `opening_with_1700_spend_records_is_refused` |
+| Not killed | `!datum.kill` | `opening_killed_is_refused` |
+| Window one hour to thirty days | `min_window_len <= window_len <= max_window_len` | `opening_with_a_1ms_window_is_refused`, `opening_with_a_window_just_below_one_hour_is_refused`, `opening_with_a_window_above_thirty_days_is_refused` |
+| `0 < per_tx_cap <= daily_cap` | `terms_ok` | `opening_with_a_zero_per_tx_cap_is_refused`, `opening_with_per_tx_cap_above_daily_cap_is_refused`, `opening_with_a_zero_daily_cap_is_refused` |
+| `min_principal >= 0` and held | `terms_ok`, `lovelace_of(value) >= min_principal` | `opening_with_a_negative_min_principal_is_refused`, `opening_below_min_principal_is_refused` |
+| `1 <= max_spends <= 50` | `terms_ok` | `opening_with_zero_max_spends_is_refused`, `opening_with_max_spends_above_50_is_refused`, `opening_with_max_spends_1700_is_refused` |
+| At most 10 `token_caps`, each `0 < per_tx <= daily` | `terms_ok` | `opening_with_eleven_token_caps_is_refused`, `opening_with_a_zero_token_per_tx_cap_is_refused`, `opening_with_token_per_tx_above_daily_is_refused` |
+| Owner signed the deploy | `list.has(extra_signatories, datum.owner)` | `opening_not_signed_by_the_owner_is_refused` |
+
+The owner signature proves at opening that `datum.owner` is a key that can sign, so the
+unconditional owner branch (§5.1) is reachable for every guard the policy admits. The
+burn (`-1`) checks only the single token and quantity
+(`burning_needs_nothing_but_the_burn`), so closing never depends on the guard's state.
+
+**Bounds.** The one-hour floor stops a short window from pruning records minutes after
+they are stamped (with `window_len = 1` every record pruned about 180 s later, so the
+agent could move `daily_cap` every 181 s and `max_spends` meant nothing). The thirty-day
+ceiling keeps records prunable, so a full `spends` list empties within a window.
+`max_spends <= 50` and at most 10 `token_caps` bound the agent's work, which grows with
+records times declared tokens.
+
+### 6.8 Execution budgets (measured)
+
+Measured with `aiken tx simulate` on transactions built against the compiled
+`plutus.json` (mainnet per-tx limit 14,000,000 mem / 10,000,000,000 cpu):
+
+| Transaction | mem | cpu |
+|---|---|---|
+| Owner exit (`OwnerSpend`), any datum: empty, 50 records + 10 caps, 1,700 records, undecodable | 31,551 | 9,139,636 |
+| Owner close: exit + STT burn | 31,551 + 24,699 | 9,139,636 + 7,216,430 |
+| Mint, honest opening | 246,017 | 87,417,232 |
+| Mint at the bounds (`max_spends` 50, 10 `token_caps`) | 440,561 | 151,346,302 |
+| Agent spend, 1 declared token, no prior records | 600,490 | 199,871,589 |
+| Agent spend, 1 declared token, 48 live records, 19 tokens held | 4,306,620 | 1,379,402,947 |
+| Agent spend at the bounds: 10 caps, 48 live records, 19 tokens + STT held | 7,997,797 (57%) | 2,528,665,728 (25%) |
+
+The compiled owner branch reads only `datum.owner`, so its cost does not grow with the
+datum. The unit test `owner_exits_at_the_record_and_token_cap_bounds` decodes the whole
+datum first and gives the upper bound with a full decode: 1,077,671 mem / 332,736,229
+cpu under `aiken check --trace-level silent`. The agent spend at the bounds leaves about
+6M mem for the swap scripts that run in the same transaction.
+
 ---
 
 ## 7. Residual risks / out of scope
@@ -358,9 +418,12 @@ and the fail-closed behavior is the safe direction.
 The spending validator pins only its **own** STT *name* usage via `no_stt_mint`
 (inv. 17). The **one-shot singleton** guarantee (that the STT policy mints exactly
 one token, ever, gated on a genesis `OutputReference`) is enforced by the
-**separate `state_token` minting policy**, not by this validator. That policy is a
-distinct, audited one-shot script. **The client must also pin/trust it** as part
-of attestation (§8, step 2). See Findings F-3 (§9).
+**separate `state_token` minting policy**, together with the opening rules (§6.7),
+not by this validator. **The client must also pin/trust it** as part of
+attestation (§8, step 2). See Findings F-3 (§9). The policy embeds
+`guard_script_hash`; a guard change not followed by updating that constant leaves
+the policy minting only into the old guard (fail-closed: deposits to the new guard
+are refused).
 
 ### 7.4 Other accepted items
 
@@ -368,6 +431,10 @@ of attestation (§8, step 2). See Findings F-3 (§9).
   the agent key/gateway *can* trade up to the caps until the owner disarms or
   sweeps. This is the accepted price of no-approval autonomy; the mitigation is
   conservative owner caps + the owner's unilateral, gateway-independent exit.
+- **Owner retunes are not checked on chain.** The owner branch accepts any
+  continuation datum. A retune outside the §6.7 bounds stops the agent branch
+  (inv. 18) but never the owner; builders and wallets should apply the opening
+  rules to retunes too.
 - **Off-chain session-key handling is a separate review.** Its compromise is fully
   bounded by the on-chain caps above and is revocable on-chain by the owner
   regardless of gateway cooperation.
@@ -382,9 +449,9 @@ params):
 
 1. **guard `scriptHash`** from the committed compiled `plutus.json` — pin by
    hashing the compiled code (no `apply_params`). Must equal
-   `1faf7dfa…5f1171f8`.
+   `8daa9ed8…340ef3ff`.
 2. **STT `policyId`** from the separate `state_token` blueprint — same hash-only
-   pin. Must equal `5c48f601…c7d80704`. (This is where §7.3's external-policy
+   pin. Must equal `73b53d7c…40f56082`. (This is where §7.3's external-policy
    trust is discharged: the client pins the audited one-shot policy id.)
 3. **STT token name** via the CBOR rule `blake2b_256(cbor.serialise(genesis
    OutputReference))` — see `CONFORMANCE.md` vectors and
@@ -407,6 +474,10 @@ against this per-asset revision:
 | **F-2** | HIGH | **Drain hidden by negative ADA outflow** — the same token drain produced no ADA spend record (net ADA in ≥ out), so nothing was charged. | **CLOSED** — same per-asset mechanism: tokens are now metered/conserved independently of the ADA leg, so a token exfil can no longer be masked by ADA accounting. Proven **REJECTED** in `security_findings_test.ak`. |
 | **F-3** | LOW | `no_stt_mint` pins only the guard's **own** STT name, so the universal STT policy's singleton invariant relies on the **separate** `state_token` minting policy. | **Carried forward as an explicit note (by design).** The one-shot singleton invariant is enforced by the SEPARATE, audited `state_token` policy; the **client must also pin/trust that policy** (§7.3, §8 step 2). Not a defect in the spending validator. |
 | (double-sat) | — | Shared-address singleton double-satisfaction. | fable's **"Not a finding."** Defense holds: `expect [guard_in]` (inv. 4). Regressioned in `guard_redteam_test.ak`. |
+| ADAM-AUD-054 | HIGH | A non-positive spend record in the opening datum offset the rolling window. | **CLOSED** — refused at mint (`spends` empty) and on the agent branch (inv. 18). `audit_2026_11_16_test.ak`; `opening_with_a_spend_record_is_refused`. |
+| ADAM-AUD-055 | HIGH | A non-positive `window_len` pruned every record at once. | **CLOSED** — refused at mint and on the agent branch below one hour (inv. 18). `audit_2026_11_16_test.ak`; `opening_with_a_1ms_window_is_refused`. |
+| Re-audit 2026-11-17 #1 | — | An opening `spends` list of ~1,700 records was reported to push the owner exit to ~17.19M mem. | **CLOSED** at mint (`spends` empty, `max_spends <= 50`): `opening_with_1700_spend_records_is_refused`, `opening_with_max_spends_1700_is_refused`. The 17.19M figure came from a test that decodes the whole datum; the compiled owner branch costs 31,551 mem on that datum (§6.8), so owner exit was not blocked on chain. |
+| Re-audit 2026-11-17 #2 | HIGH | `window_len = 1` ms let the agent move `daily_cap` every ~181 s and voided `max_spends`. | **CLOSED** — one-hour floor at mint and on the agent branch: `opening_with_a_1ms_window_is_refused`, `agent_refuses_a_1ms_window_that_resets_the_daily_cap`. |
 
 ---
 
@@ -442,7 +513,7 @@ when the real slot is in `[lo, hi]` with `hi - lo <= max_skew`, so "fast-forward
 
 ---
 
-## 11. Test suite (all green under `aiken check` — 54 tests)
+## 11. Test suite (all green under `aiken check` — 112 tests)
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -452,20 +523,23 @@ when the real slot is in `[lo, hi]` with `hi - lo <= max_skew`, so "fast-forward
 | `security_findings_test.ak` | 3 | F-1 + F-2 exfil now REJECTED; declared-token over-cap REJECTED |
 | `guard_redteam_test.ak` | 10 | singleton / STT / window / datum-invariance regressions |
 | `datum_cbor_conformance_test.ak` | 1 | pins `cbor.serialise(GuardDatum)` for a concrete 12-field datum |
+| `audit_2026_11_16_test.ak` | 9 | 2026-11-16 audit: history, second-STT and reference-script refusals; owner sweeps a poisoned guard |
+| `audit_2026_11_17_test.ak` | 49 | opening rules (§6.7), agent-branch terms, owner exit and agent spend at the bounds |
 
 ---
 
 ## 12. Build & reproduce
 
 ```
-aiken check      # type-check + run the full test suite (54 tests)
+aiken check      # type-check + run the full test suite (112 tests)
 aiken build      # produces plutus.json blueprints (compare to committed)
 ```
 
-- Compiler pinned: **Aiken v1.1.23+8949565**, Plutus **V3**.
+- Compiler pinned in `aiken.toml`: **Aiken v1.1.23**; `plutus.json` built with
+  v1.1.22+39d6b04. Plutus **V3**.
 - stdlib pinned: **v3.1.0**.
-- Reproducible hashes: guard `scriptHash = 1faf7dfa…5f1171f8`,
-  STT `policyId = 5c48f601…c7d80704`.
+- Reproducible hashes: guard `scriptHash = 8daa9ed8…340ef3ff`,
+  STT `policyId = 73b53d7c…40f56082`.
 
 ---
 
